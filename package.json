@@ -38,9 +38,25 @@
     ],
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
-      "category": "Development"
+      "category": "Development",
+      "icon": "build/icon.svg",
+      "desktopName": "Skv Benchmark Lab",
+      "synopsis": "Redis-compatible benchmark tool for SnugKV",
+      "description": "Desktop benchmark lab for Redis, SnugKV raw and SnugKV optimized.",
+      "desktop": {
+        "entry": {
+          "Name": "Skv Benchmark Lab",
+          "Comment": "Benchmark Redis and SnugKV locally",
+          "Categories": "Development;Utility",
+          "Keywords": "redis;snugkv;benchmark;database;performance",
+          "StartupWMClass": "skv-benchmark-lab",
+          "Terminal": false,
+          "Type": "Application"
+        }
+      }
     },
     "mac": {
       "target": [
@@ -54,6 +70,7 @@
     },
     "directories": {
       "output": "release"
-    }
+    },
+    "executableName": "skv-benchmark-lab"
   }
 }
