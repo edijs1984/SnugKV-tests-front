@@ -42,17 +42,16 @@
         "deb"
       ],
       "category": "Development",
-      "icon": "build/icon.svg",
-      "desktopName": "Skv Benchmark Lab",
+      "icon": "build/icons",
       "synopsis": "Redis-compatible benchmark tool for SnugKV",
       "description": "Desktop benchmark lab for Redis, SnugKV raw and SnugKV optimized.",
+      "syncDesktopName": true,
       "desktop": {
         "entry": {
           "Name": "Skv Benchmark Lab",
           "Comment": "Benchmark Redis and SnugKV locally",
           "Categories": "Development;Utility",
           "Keywords": "redis;snugkv;benchmark;database;performance",
-          "StartupWMClass": "skv-benchmark-lab",
           "Terminal": false,
           "Type": "Application"
         }
@@ -72,5 +71,8 @@
       "output": "release"
     },
     "executableName": "skv-benchmark-lab"
-  }
+  },
+  "description": "Desktop benchmark lab for Redis and SnugKV.",
+  "author": "Edijs Ziedins",
+  "desktopName": "dev.snugkv.benchmarklab.desktop"
 }
