@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const { spawn, spawnSync } = require('node:child_process')
-const { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } = require('node:fs')
+const { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const { join, resolve } = require('node:path')
 const os = require('node:os')
@@ -168,6 +168,25 @@ function historyPath() {
   return join(app.getPath('userData'), 'best-results.json')
 }
 
+function historyResetPath() {
+  return join(app.getPath('userData'), 'best-results-reset.json')
+}
+
+function loadHistoryResets() {
+  try {
+    if (!existsSync(historyResetPath())) return {}
+    return JSON.parse(readFileSync(historyResetPath(), 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function resetCutoff(profile) {
+  const resets = loadHistoryResets()
+  const value = Date.parse(String(resets[profile] || ''))
+  return Number.isFinite(value) ? value : 0
+}
+
 function normalizeServerLabel(label) {
   const value = String(label || '').toLowerCase().replace(/_/g, '-')
   if (value === 'redis') return 'redis'
@@ -226,6 +245,7 @@ function mergeBest(current, load, get, source) {
 function scanCliHistory(profile) {
   const best = emptyBest()
   const root = join(snugRepo(), 'benchmark-results')
+  const cutoff = resetCutoff(profile)
   if (!existsSync(root)) return best
 
   let dirs = []
@@ -237,6 +257,13 @@ function scanCliHistory(profile) {
 
   for (const entry of dirs) {
     const dir = join(root, entry.name)
+    if (cutoff > 0) {
+      try {
+        if (statSync(dir).mtimeMs <= cutoff) continue
+      } catch {
+        continue
+      }
+    }
     const loadPath = join(dir, 'load.json')
     const getPath = join(dir, 'get.json')
     if (!existsSync(loadPath) || !existsSync(getPath)) continue
@@ -260,10 +287,12 @@ function bestResultsForProfile(profile) {
   const result = scanCliHistory(profile)
   const saved = loadSavedHistory()
   const profileSaved = saved[profile] || {}
+  const cutoff = resetCutoff(profile)
 
   for (const key of ['redis', 'snug-raw', 'snug-opt']) {
     const record = profileSaved[key]
     if (!record) continue
+    if (cutoff > 0 && Date.parse(String(record.lastUpdated || '')) <= cutoff) continue
     const current = result[key]
     if (!current) {
       result[key] = record
@@ -489,6 +518,28 @@ ipcMain.handle('server:status', () => {
 ipcMain.handle('history:get', (_event, profile) => {
   if (!profiles.has(String(profile))) return emptyBest()
   return bestResultsForProfile(String(profile))
+})
+
+ipcMain.handle('history:reset', (_event, profile) => {
+  const normalized = String(profile)
+  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
+
+  const now = new Date().toISOString()
+  const resets = loadHistoryResets()
+  resets[normalized] = now
+  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
+
+  const history = loadSavedHistory()
+  if (history[normalized]) {
+    delete history[normalized]
+    saveHistory(history)
+  }
+
+  const best = emptyBest()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history:update', { profile: normalized, best })
+  }
+  return best
 })
 
 ipcMain.handle('bench:environment', () => ({
