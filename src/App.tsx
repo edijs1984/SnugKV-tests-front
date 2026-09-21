@@ -170,7 +170,7 @@ function App() {
   async function copyResults() {
     if (!job?.results) return
     await navigator.clipboard.writeText(JSON.stringify({
-      config,
+      config: job.config ?? config,
       results: job.results,
     }, null, 2))
     setCopied(true)
@@ -180,8 +180,8 @@ function App() {
   async function downloadResults() {
     if (!job?.results) return
     await window.snugBench.save({
-      filename: `snugkv-${config.profile}-${config.server}-${Date.now()}.json`,
-      data: { config, results: job.results },
+      filename: `snugkv-${(job.config ?? config).profile}-${(job.config ?? config).server}-${Date.now()}.json`,
+      data: { config: job.config ?? config, results: job.results },
     })
   }
 
@@ -190,6 +190,7 @@ function App() {
   }
 
   const r = job?.results
+  const runConfig = job?.config ?? config
   const selectedProfileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
   const activeMode = serverStatus.kind
   const encodingOn = activeMode === 'snug-opt'
@@ -201,8 +202,8 @@ function App() {
   const optimizationCurrentMB = optimization?.used_memory ? optimization.used_memory / 1024 / 1024 : 0
   const optimizationSavedMB = optimization ? Math.max(0, optimizationStartMB - optimizationCurrentMB) : 0
   const rewrittenRun = Number(optimization?.optimizer_rewritten_run || 0)
-  const optimizationProgress = optimization && config.keys > 0
-    ? Math.min(100, (rewrittenRun / config.keys) * 100)
+  const optimizationProgress = optimization && runConfig.keys > 0
+    ? Math.min(100, (rewrittenRun / runConfig.keys) * 100)
     : 0
   const estimatedFinalMB = optimization?.estimated_final_memory
     ? optimization.estimated_final_memory / 1024 / 1024
@@ -388,7 +389,7 @@ function App() {
                   )}
 
                   <div className="optimization-stats">
-                    <span>Rewritten <b>{nf.format(rewrittenRun)}</b> / {nf.format(config.keys)}</span>
+                    <span>Rewritten <b>{nf.format(rewrittenRun)}</b> / {nf.format(runConfig.keys)}</span>
                     <span>Queue <b>{nf.format(Number(optimization.optimizer_queue_depth || 0))}</b></span>
                     {optimization.arena_payload_bytes !== undefined && (
                       <span>Payload <b>{(optimization.arena_payload_bytes / 1024 / 1024).toFixed(1)} MB</b></span>
