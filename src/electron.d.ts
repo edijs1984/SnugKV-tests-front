@@ -15,6 +15,7 @@ declare global {
       stopServer(): Promise<ServerStatus>
       onServerUpdate(callback: (status: ServerStatus) => void): () => void
       bestResults(profile: string): Promise<ProfileBestResults>
+      resetBestResults(profile: string): Promise<ProfileBestResults>
       onHistoryUpdate(callback: (payload: { profile: string; best: ProfileBestResults }) => void): () => void
     }
   }
