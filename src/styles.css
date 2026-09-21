@@ -38,8 +38,10 @@ input:focus, select:focus { border-color: #4bd18d; box-shadow: 0 0 0 3px rgba(75
 .command { margin-top: 18px; border: 1px solid #25303a; background: #0a0e13; border-radius: 12px; padding: 12px; }
 .command span { display: block; color: #687582; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; font-weight: 800; margin-bottom: 8px; }
 .command code { color: #9be9bc; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; word-break: break-all; }
-.run-button { margin-top: 18px; width: 100%; border: 0; border-radius: 11px; padding: 13px 18px; background: #68e8a5; color: #07110c; font-weight: 900; box-shadow: 0 8px 30px rgba(104,232,165,.14); }
+.run-row { display: flex; gap: 10px; margin-top: 18px; }
+.run-button { flex: 1; border: 0; border-radius: 11px; padding: 13px 18px; background: #68e8a5; color: #07110c; font-weight: 900; box-shadow: 0 8px 30px rgba(104,232,165,.14); }
 .run-button:disabled { cursor: not-allowed; opacity: .55; }
+.cancel-button { border: 1px solid #3b2b30; border-radius: 11px; padding: 13px 18px; background: #1a1014; color: #ff9ca6; font-weight: 800; }
 .actions { display: flex; gap: 8px; }
 .actions button { border: 1px solid #2a3440; background: #111820; color: #cbd5df; border-radius: 8px; padding: 7px 10px; font-size: 12px; }
 .metrics { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
