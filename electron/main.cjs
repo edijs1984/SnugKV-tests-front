@@ -542,15 +542,16 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
 
   const appendProgress = chunk => {
     const text = chunk.toString()
-    job.log += text
-    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-
     progressBuffer += text
     const lines = progressBuffer.split('\n')
     progressBuffer = lines.pop() || ''
 
+    const visible = []
     for (const line of lines) {
-      if (!line.startsWith('BENCH_PROGRESS ')) continue
+      if (!line.startsWith('BENCH_PROGRESS ')) {
+        visible.push(line)
+        continue
+      }
       try {
         const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
         if (!job.optimization?.start_used_memory) {
@@ -560,8 +561,13 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
         }
         job.optimization = progress
       } catch {
-        // Keep benchmark output intact even if a progress line is malformed.
+        visible.push(line)
       }
+    }
+
+    if (visible.length) {
+      job.log += visible.join('\n') + '\n'
+      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
     }
 
     emit(job)
