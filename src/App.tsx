@@ -24,6 +24,7 @@ const initial: BenchmarkConfig = {
   pipeline: 256,
   settleMs: 0,
   seed: 1,
+  optimizerMode: 'dedicated',
 }
 
 const nf = new Intl.NumberFormat('en-US')
@@ -97,7 +98,7 @@ function App() {
     setServerBusy(true)
     setAppError(null)
     try {
-      const next = await window.snugBench.startServer(kind)
+      const next = await window.snugBench.startServer(kind, config.optimizerMode ?? 'dedicated')
       setServerStatus(next)
       if (next.port && next.label) {
         setConfig(prev => ({ ...prev, host: '127.0.0.1', port: next.port!, server: next.label! }))
@@ -253,7 +254,9 @@ function App() {
                   onClick={stopServer}
                   title="Stop server"
                 >
-                  {activeMode === 'snug-opt' ? 'OPT' : activeMode === 'snug-raw' ? 'RAW' : 'REDIS'}
+                  {activeMode === 'snug-opt'
+                    ? `OPT · ${(serverStatus.optimizerMode ?? 'dedicated').toUpperCase()}`
+                    : activeMode === 'snug-raw' ? 'RAW' : 'REDIS'}
                 </button>
               )}
             </div>
@@ -290,6 +293,33 @@ function App() {
                 <span>Pipeline</span>
                 <input type="number" value={config.pipeline} onChange={e => field('pipeline', +e.target.value)} />
               </label>
+
+              <div className="optimizer-mode-block">
+                <span className="optimizer-mode-label">Optimizer mode</span>
+                <div className="optimizer-mode-switch">
+                  {(['dedicated', 'sidecar'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={(config.optimizerMode ?? 'dedicated') === mode ? 'active' : ''}
+                      disabled={busy || serverBusy}
+                      onClick={() => field('optimizerMode', mode)}
+                    >
+                      {mode === 'dedicated' ? 'Dedicated' : 'Sidecar'}
+                    </button>
+                  ))}
+                </div>
+                <small>
+                  {(config.optimizerMode ?? 'dedicated') === 'dedicated'
+                    ? 'Uses the host aggressively for SnugKV.'
+                    : 'Leaves CPU and memory headroom for colocated apps.'}
+                  {activeMode === 'snug-opt' &&
+                    serverStatus.optimizerMode &&
+                    serverStatus.optimizerMode !== (config.optimizerMode ?? 'dedicated')
+                    ? ' Restart SnugKV opt to apply.'
+                    : ''}
+                </small>
+              </div>
 
               <div className="feature-list">
                 <div className={encodingOn ? 'feature-row on' : 'feature-row'}>
@@ -464,7 +494,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <div><span>Skv</span><span>v0.1.5</span></div>
+        <div><span>Skv</span><span>v0.1.7</span></div>
         <div><span>SnugKV Benchmark Lab</span><span className="local-indicator" /> <span>Local</span></div>
       </footer>
     </main>
