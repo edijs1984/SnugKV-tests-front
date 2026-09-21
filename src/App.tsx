@@ -38,6 +38,7 @@ function App() {
   const [copied, setCopied] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
   const [serverBusy, setServerBusy] = useState(false)
+  const [bestCopied, setBestCopied] = useState(false)
   const [best, setBest] = useState<ProfileBestResults>({
     redis: null,
     'snug-raw': null,
@@ -128,6 +129,38 @@ function App() {
       setBusy(false)
       alert(error instanceof Error ? error.message : String(error))
     }
+  }
+
+  async function copyProfileBests() {
+    const profileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
+    const rows = [
+      ['redis', 'Redis'],
+      ['snug-raw', 'SnugKV raw'],
+      ['snug-opt', 'SnugKV opt'],
+    ] as const
+
+    const lines = [
+      `SnugKV benchmark bests — ${profileLabel}`,
+      '',
+    ]
+
+    for (const [key, label] of rows) {
+      const result = best[key]
+      lines.push(label)
+      if (!result) {
+        lines.push('  no recorded result')
+      } else {
+        lines.push(`  best SET/s: ${Math.round(result.bestSet)}`)
+        lines.push(`  best GET/s: ${Math.round(result.bestGet)}`)
+        lines.push(`  lowest bytes/key: ${Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : 'n/a'}`)
+        lines.push(`  runs: ${result.runs}`)
+      }
+      lines.push('')
+    }
+
+    await navigator.clipboard.writeText(lines.join('\n').trim())
+    setBestCopied(true)
+    setTimeout(() => setBestCopied(false), 1500)
   }
 
   async function copyResults() {
@@ -282,6 +315,9 @@ function App() {
               <h2>Best results</h2>
               <small>{profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile}</small>
             </div>
+            <button className="copy-bests" onClick={copyProfileBests}>
+              {bestCopied ? 'Copied' : 'Copy all'}
+            </button>
           </div>
 
           <div className="best-stack">
