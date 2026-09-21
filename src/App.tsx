@@ -194,6 +194,14 @@ function App() {
   const encodingOn = activeMode === 'snug-opt'
   const compressionOn = activeMode === 'snug-opt'
   const jsonShapeOn = activeMode === 'snug-opt'
+  const optimization = job?.optimization
+  const optimizing = busy && activeMode === 'snug-opt' && optimization
+  const optimizationStartMB = optimization?.start_used_memory ? optimization.start_used_memory / 1024 / 1024 : 0
+  const optimizationCurrentMB = optimization?.used_memory ? optimization.used_memory / 1024 / 1024 : 0
+  const optimizationSavedMB = optimization ? Math.max(0, optimizationStartMB - optimizationCurrentMB) : 0
+  const optimizationProgress = optimization && config.keys > 0
+    ? Math.min(100, (Number(optimization.optimizer_rewritten || 0) / config.keys) * 100)
+    : 0
 
   return (
     <main className="app-shell">
@@ -317,6 +325,39 @@ function App() {
             </section>
 
             <section className="results-workspace">
+              {optimizing && (
+                <div className="optimization-card">
+                  <div className="optimization-head">
+                    <div>
+                      <span className="optimization-pulse" />
+                      <strong>Optimizing SnugKV</strong>
+                    </div>
+                    <span>{optimizationProgress.toFixed(1)}%</span>
+                  </div>
+
+                  <div className="optimization-memory">
+                    <strong>{optimizationCurrentMB.toFixed(1)} MB</strong>
+                    <span>
+                      from {optimizationStartMB.toFixed(1)} MB
+                      {optimizationSavedMB > 0 ? ` · saved ${optimizationSavedMB.toFixed(1)} MB` : ''}
+                    </span>
+                  </div>
+
+                  <div className="optimization-bar" aria-label="Optimization progress">
+                    <i style={{ width: `${optimizationProgress}%` }} />
+                  </div>
+
+                  <div className="optimization-stats">
+                    <span>Rewritten <b>{nf.format(Number(optimization.optimizer_rewritten || 0))}</b> / {nf.format(config.keys)}</span>
+                    <span>Queue <b>{nf.format(Number(optimization.optimizer_queue_depth || 0))}</b></span>
+                    {optimization.arena_payload_bytes !== undefined && (
+                      <span>Payload <b>{(optimization.arena_payload_bytes / 1024 / 1024).toFixed(1)} MB</b></span>
+                    )}
+                    <span>{(optimization.elapsed_ms / 1000).toFixed(0)}s</span>
+                  </div>
+                </div>
+              )}
+
               <div className="console-card">
                 <div className="console-head">
                   <div>
@@ -413,7 +454,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <div><span>Skv</span><span>v0.1.0</span></div>
+        <div><span>Skv</span><span>v0.1.5</span></div>
         <div><span>SnugKV Benchmark Lab</span><span className="local-indicator" /> <span>Local</span></div>
       </footer>
     </main>
