@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BenchmarkConfig, Job } from './types'
+import type { BenchmarkConfig, Job, ServerStatus } from './types'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -36,6 +36,8 @@ function App() {
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
+  const [serverBusy, setServerBusy] = useState(false)
 
   const command = useMemo(() => {
     return [
@@ -53,11 +55,54 @@ function App() {
   }, [config])
 
   useEffect(() => {
-    return window.snugBench.onUpdate((next: Job) => {
+    const offBench = window.snugBench.onUpdate((next: Job) => {
       setJob(next)
       if (next.status !== 'running') setBusy(false)
     })
+    const offServer = window.snugBench.onServerUpdate((next: ServerStatus) => {
+      setServerStatus(next)
+      setServerBusy(false)
+      if (next.running && next.port && next.label) {
+        setConfig(prev => ({ ...prev, host: '127.0.0.1', port: next.port!, server: next.label! }))
+      }
+    })
+    window.snugBench.serverStatus().then(next => {
+      setServerStatus(next)
+      if (next.running && next.port && next.label) {
+        setConfig(prev => ({ ...prev, host: '127.0.0.1', port: next.port!, server: next.label! }))
+      }
+    })
+    return () => {
+      offBench()
+      offServer()
+    }
   }, [])
+
+  async function startServer(kind: 'redis' | 'snug-raw' | 'snug-opt') {
+    setServerBusy(true)
+    try {
+      const next = await window.snugBench.startServer(kind)
+      setServerStatus(next)
+      if (next.port && next.label) {
+        setConfig(prev => ({ ...prev, host: '127.0.0.1', port: next.port!, server: next.label! }))
+      }
+    } catch (error) {
+      setServerBusy(false)
+      alert(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function stopServer() {
+    setServerBusy(true)
+    try {
+      const next = await window.snugBench.stopServer()
+      setServerStatus(next)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error))
+    } finally {
+      setServerBusy(false)
+    }
+  }
 
   async function run() {
     setBusy(true)
@@ -115,6 +160,43 @@ function App() {
           <div className="section-title">
             <h2>Test configuration</h2>
             <small>Target database is flushed before LOAD.</small>
+          </div>
+
+          <div className="server-control">
+            <div className="server-control-head">
+              <div>
+                <span className="server-kicker">Local benchmark server</span>
+                <strong>{serverStatus.running ? `${serverStatus.label} · :${serverStatus.port}` : 'Stopped'}</strong>
+              </div>
+              <button className="stop-server" disabled={serverBusy || busy || !serverStatus.running} onClick={stopServer}>Stop</button>
+            </div>
+            <div className="server-buttons">
+              <button
+                className={serverStatus.kind === 'redis' ? 'active' : ''}
+                disabled={serverBusy || busy}
+                onClick={() => startServer('redis')}
+              >
+                <span>Redis</span>
+                <small>:6390</small>
+              </button>
+              <button
+                className={serverStatus.kind === 'snug-raw' ? 'active' : ''}
+                disabled={serverBusy || busy}
+                onClick={() => startServer('snug-raw')}
+              >
+                <span>SnugKV raw</span>
+                <small>:6382</small>
+              </button>
+              <button
+                className={serverStatus.kind === 'snug-opt' ? 'active' : ''}
+                disabled={serverBusy || busy}
+                onClick={() => startServer('snug-opt')}
+              >
+                <span>SnugKV opt</span>
+                <small>:6383</small>
+              </button>
+            </div>
+            <small className="server-note">Starting one stops listeners on benchmark ports 6390, 6382 and 6383 first.</small>
           </div>
 
           <label className="field wide">
