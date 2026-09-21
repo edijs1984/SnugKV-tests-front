@@ -46,3 +46,18 @@ export type ServerStatus = {
   port?: number
   label?: string
 }
+
+export type BestServerResult = {
+  bestSet: number
+  bestGet: number
+  lowestBytesPerKey: number
+  runs: number
+  lastUpdated: string | null
+  source: 'cli' | 'electron' | null
+}
+
+export type ProfileBestResults = {
+  redis: BestServerResult | null
+  'snug-raw': BestServerResult | null
+  'snug-opt': BestServerResult | null
+}
