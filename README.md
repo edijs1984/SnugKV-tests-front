@@ -7,6 +7,7 @@ The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containe
 ## Features
 
 - Native Electron desktop app.
+- One-click local server controls for Redis, SnugKV raw, and SnugKV optimized.
 - React/Vite renderer.
 - Test profiles: cached JSON, session JSON, API JSON, counter, UUID, text, compressible, already-compressed, random.
 - Editable host, port, result label, key count, GET operations, workers, pipeline, settle time, and seed.
@@ -118,3 +119,15 @@ server you started manually
 ```
 
 The renderer has no Node integration. Shell execution stays in the Electron main process behind the preload IPC bridge.
+
+## One-click local servers
+
+The desktop app includes three buttons:
+
+- Redis on `127.0.0.1:6390`
+- SnugKV raw on `127.0.0.1:6382`
+- SnugKV optimized on `127.0.0.1:6383`
+
+On Linux, starting one first clears listeners on all three benchmark ports, then starts the selected server and waits until its TCP port is ready. SnugKV is rebuilt from the current checkout before raw/optimized launch, so the desktop benchmark uses current source code.
+
+Redis requires `redis-server` to be installed and available on `PATH`. SnugKV requires Go to be installed.
