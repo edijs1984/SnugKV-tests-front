@@ -532,14 +532,43 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   })
   activeChild = child
 
+  let progressBuffer = ''
   const append = chunk => {
-    job.log += chunk.toString()
+    const text = chunk.toString()
+    job.log += text
     if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
     emit(job)
   }
 
+  const appendProgress = chunk => {
+    const text = chunk.toString()
+    job.log += text
+    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+
+    progressBuffer += text
+    const lines = progressBuffer.split('\n')
+    progressBuffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (!line.startsWith('BENCH_PROGRESS ')) continue
+      try {
+        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
+        if (!job.optimization?.start_used_memory) {
+          progress.start_used_memory = progress.used_memory
+        } else {
+          progress.start_used_memory = job.optimization.start_used_memory
+        }
+        job.optimization = progress
+      } catch {
+        // Keep benchmark output intact even if a progress line is malformed.
+      }
+    }
+
+    emit(job)
+  }
+
   child.stdout.on('data', append)
-  child.stderr.on('data', append)
+  child.stderr.on('data', appendProgress)
 
   child.on('error', error => {
     job.status = 'failed'
