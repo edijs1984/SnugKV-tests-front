@@ -1,7 +1,7 @@
 {
   "name": "snugkv-tests-front",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "npm run electron:dev",
@@ -43,7 +43,7 @@
         "deb"
       ],
       "category": "Development",
-      "icon": "build/icons",
+      "icon": "build/icon.svg",
       "synopsis": "Redis-compatible benchmark tool for SnugKV",
       "description": "Desktop benchmark lab for Redis, SnugKV raw and SnugKV optimized.",
       "syncDesktopName": true,
