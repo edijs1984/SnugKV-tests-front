@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld('snugBench', {
     return () => ipcRenderer.removeListener('bench:update', listener)
   },
   serverStatus: () => ipcRenderer.invoke('server:status'),
-  startServer: kind => ipcRenderer.invoke('server:start', kind),
+  startServer: (kind, optimizerMode = 'dedicated') =>
+    ipcRenderer.invoke('server:start', { kind, optimizerMode }),
   stopServer: () => ipcRenderer.invoke('server:stop'),
   onServerUpdate: callback => {
     const listener = (_event, status) => callback(status)
