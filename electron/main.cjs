@@ -369,8 +369,10 @@ async function buildSnugBinary() {
   return binary
 }
 
-async function startManagedServer(kind) {
+async function startManagedServer(request) {
   if (activeChild) throw new Error('Cannot switch database server while a benchmark is running')
+  const kind = typeof request === 'string' ? request : request?.kind
+  const optimizerMode = request?.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated'
   const def = serverDefs[kind]
   if (!def) throw new Error(`Unknown server kind: ${kind}`)
 
@@ -400,7 +402,12 @@ async function startManagedServer(kind) {
     if (kind === 'snug-raw') {
       args.push('-encoding=false', '-compression=false', '-json-shape=false')
     } else {
-      args.push('-encoding=true', '-compression=true', '-json-shape=true')
+      args.push(
+        '-encoding=true',
+        '-compression=true',
+        '-json-shape=true',
+        '-optimizer-mode', optimizerMode,
+      )
     }
   }
 
@@ -418,7 +425,13 @@ async function startManagedServer(kind) {
   child.stdout.on('data', append)
   child.stderr.on('data', append)
 
-  activeServer = { kind, child, port: def.port, label: def.label }
+  activeServer = {
+    kind,
+    child,
+    port: def.port,
+    label: def.label,
+    optimizerMode: kind === 'snug-opt' ? optimizerMode : undefined,
+  }
 
   child.once('exit', () => {
     if (activeServer?.child === child) activeServer = null
@@ -428,6 +441,7 @@ async function startManagedServer(kind) {
         kind,
         port: def.port,
         label: def.label,
+        optimizerMode: kind === 'snug-opt' ? optimizerMode : undefined,
       })
     }
   })
@@ -446,12 +460,13 @@ async function startManagedServer(kind) {
     kind,
     port: def.port,
     label: def.label,
+    optimizerMode: kind === 'snug-opt' ? optimizerMode : undefined,
   }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('server:update', status)
   return status
 }
 
-ipcMain.handle('server:start', async (_event, kind) => startManagedServer(kind))
+ipcMain.handle('server:start', async (_event, request) => startManagedServer(request))
 ipcMain.handle('server:stop', async () => {
   if (activeChild) throw new Error('Cannot stop database server while a benchmark is running')
   await killBenchmarkPorts()
@@ -466,6 +481,7 @@ ipcMain.handle('server:status', () => {
     kind: activeServer.kind,
     port: activeServer.port,
     label: activeServer.label,
+    optimizerMode: activeServer.optimizerMode,
   }
 })
 
