@@ -186,141 +186,180 @@ function App() {
   }
 
   const r = job?.results
+  const selectedProfileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
+  const activeMode = serverStatus.kind
+  const encodingOn = activeMode === 'snug-opt'
+  const compressionOn = activeMode === 'snug-opt'
+  const jsonShapeOn = activeMode === 'snug-opt'
 
   return (
-    <main className="shell">
-      <header className="topbar compact">
-        <div className="brand">
-          <div className="brand-mark">S</div>
-          <div>
-            <strong>SnugKV Benchmark Lab</strong>
-            <span>Redis-compatible performance tests</span>
+    <main className="app-shell">
+      <header className="app-header">
+        <div className="brand-lockup">
+          <div className="skv-logo" aria-label="Skv">
+            <span>S</span><span>k</span><span>v</span>
           </div>
+          <div className="brand-divider" />
+          <div className="brand-subtitle">Benchmark Lab</div>
         </div>
-        <div className={`status ${job?.status ?? 'idle'}`}>
-          <span />
-          {job?.status ?? 'idle'}
+
+        <div className={`app-status ${job?.status ?? 'idle'}`}>
+          <span className="status-dot" />
+          <span>{job?.status ?? 'idle'}</span>
         </div>
       </header>
 
-      <section className="grid three-col">
-        <div className="panel config-panel">
-          <div className="section-title">
-            <h2>Test configuration</h2>
-            <small>Target database is flushed before LOAD.</small>
+      <section className="workspace">
+        <div className="main-area">
+          <div className="server-strip">
+            <div className="server-switches">
+              {([
+                ['redis', 'Redis'],
+                ['snug-raw', 'SnugKV raw'],
+                ['snug-opt', 'SnugKV opt'],
+              ] as const).map(([kind, label]) => (
+                <button
+                  key={kind}
+                  className={activeMode === kind ? 'server-choice active' : 'server-choice'}
+                  disabled={serverBusy || busy}
+                  onClick={() => startServer(kind)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="server-state">
+              <span>{serverStatus.running ? `${config.host}:${serverStatus.port}` : 'No local server'}</span>
+              {serverStatus.running && (
+                <button
+                  className="mode-pill"
+                  disabled={serverBusy || busy}
+                  onClick={stopServer}
+                  title="Stop server"
+                >
+                  {activeMode === 'snug-opt' ? 'OPT' : activeMode === 'snug-raw' ? 'RAW' : 'REDIS'}
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="server-control">
-            <div className="server-control-head">
-              <div>
-                <span className="server-kicker">Local benchmark server</span>
-                <strong>{serverStatus.running ? `${serverStatus.label} · :${serverStatus.port}` : 'Stopped'}</strong>
+          <div className="bench-layout">
+            <section className="config-column">
+              <label className="compact-field">
+                <span>Profile</span>
+                <select value={config.profile} onChange={e => field('profile', e.target.value)}>
+                  {profiles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+
+              <label className="compact-field">
+                <span>Keys</span>
+                <input type="number" value={config.keys} onChange={e => field('keys', +e.target.value)} />
+              </label>
+
+              <label className="compact-field">
+                <span>Workers</span>
+                <input type="number" value={config.workers} onChange={e => field('workers', +e.target.value)} />
+              </label>
+
+              <label className="compact-field">
+                <span>Pipeline</span>
+                <input type="number" value={config.pipeline} onChange={e => field('pipeline', +e.target.value)} />
+              </label>
+
+              <div className="feature-list">
+                <div className={encodingOn ? 'feature-row on' : 'feature-row'}>
+                  <span className="feature-toggle"><i /></span>
+                  <span>Encoding</span>
+                </div>
+                <div className={compressionOn ? 'feature-row on' : 'feature-row'}>
+                  <span className="feature-toggle"><i /></span>
+                  <span>Compression</span>
+                </div>
+                <div className={jsonShapeOn ? 'feature-row on' : 'feature-row'}>
+                  <span className="feature-toggle"><i /></span>
+                  <span>JSON shape</span>
+                </div>
               </div>
-              <button className="stop-server" disabled={serverBusy || busy || !serverStatus.running} onClick={stopServer}>Stop</button>
-            </div>
-            <div className="server-buttons">
-              <button
-                className={serverStatus.kind === 'redis' ? 'active' : ''}
-                disabled={serverBusy || busy}
-                onClick={() => startServer('redis')}
-              >
-                <span>Redis</span>
-                <small>:6390</small>
-              </button>
-              <button
-                className={serverStatus.kind === 'snug-raw' ? 'active' : ''}
-                disabled={serverBusy || busy}
-                onClick={() => startServer('snug-raw')}
-              >
-                <span>SnugKV raw</span>
-                <small>:6382</small>
-              </button>
-              <button
-                className={serverStatus.kind === 'snug-opt' ? 'active' : ''}
-                disabled={serverBusy || busy}
-                onClick={() => startServer('snug-opt')}
-              >
-                <span>SnugKV opt</span>
-                <small>:6383</small>
-              </button>
-            </div>
-            <small className="server-note">Starting one stops listeners on benchmark ports 6390, 6382 and 6383 first.</small>
-          </div>
 
-          <label className="field wide">
-            <span>Profile</span>
-            <select value={config.profile} onChange={e => field('profile', e.target.value)}>
-              {profiles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
+              <details className="advanced-box">
+                <summary>Advanced</summary>
+                <div className="advanced-grid">
+                  <label><span>GET ops</span><input type="number" value={config.getOps} onChange={e => field('getOps', +e.target.value)} /></label>
+                  <label><span>Settle ms</span><input type="number" value={config.settleMs} onChange={e => field('settleMs', +e.target.value)} /></label>
+                  <label><span>Seed</span><input type="number" value={config.seed} onChange={e => field('seed', +e.target.value)} /></label>
+                  <label><span>Host</span><input value={config.host} onChange={e => field('host', e.target.value)} /></label>
+                  <label><span>Port</span><input type="number" value={config.port} onChange={e => field('port', +e.target.value)} /></label>
+                  <label><span>Label</span><input value={config.server} onChange={e => field('server', e.target.value)} /></label>
+                </div>
+                <div className="cli-preview">{command}</div>
+              </details>
 
-          <div className="form-grid">
-            <label className="field"><span>Host</span><input value={config.host} onChange={e => field('host', e.target.value)} /></label>
-            <label className="field"><span>Port</span><input type="number" value={config.port} onChange={e => field('port', +e.target.value)} /></label>
-            <label className="field"><span>Result label</span><input value={config.server} onChange={e => field('server', e.target.value)} /></label>
-            <label className="field"><span>Keys</span><input type="number" value={config.keys} onChange={e => field('keys', +e.target.value)} /></label>
-            <label className="field"><span>GET operations</span><input type="number" value={config.getOps} onChange={e => field('getOps', +e.target.value)} /></label>
-            <label className="field"><span>Workers</span><input type="number" value={config.workers} onChange={e => field('workers', +e.target.value)} /></label>
-            <label className="field"><span>Pipeline</span><input type="number" value={config.pipeline} onChange={e => field('pipeline', +e.target.value)} /></label>
-            <label className="field"><span>Settle (ms)</span><input type="number" value={config.settleMs} onChange={e => field('settleMs', +e.target.value)} /></label>
-            <label className="field"><span>Seed</span><input type="number" value={config.seed} onChange={e => field('seed', +e.target.value)} /></label>
-          </div>
+              <div className="run-actions">
+                <button className="primary-run" disabled={busy || !serverStatus.running} onClick={run}>
+                  <span className="play-icon">▶</span>
+                  {busy ? 'Benchmark running…' : 'Run benchmark'}
+                </button>
+                {busy && <button className="secondary-stop" onClick={() => window.snugBench.cancel()}>Cancel</button>}
+              </div>
+            </section>
 
-          <div className="command">
-            <span>CLI equivalent</span>
-            <code>{command}</code>
-          </div>
+            <section className="results-workspace">
+              <div className="console-card">
+                <div className="console-head">
+                  <div>
+                    <strong>Output</strong>
+                    <span>{selectedProfileLabel}</span>
+                  </div>
+                  <div className="console-actions">
+                    {r && <button onClick={copyResults}>{copied ? 'Copied' : 'Copy JSON'}</button>}
+                    {r && <button onClick={downloadResults}>Save</button>}
+                  </div>
+                </div>
+                <pre className="console-body">{job?.log || 'Ready to run.'}</pre>
+                {job?.error && <div className="inline-error">{job.error}</div>}
+              </div>
 
-          <div className="run-row">
-            <button className="run-button" disabled={busy} onClick={run}>
-              {busy ? 'Benchmark running…' : 'Run benchmark'}
-            </button>
-            {busy && <button className="cancel-button" onClick={() => window.snugBench.cancel()}>Cancel</button>}
-          </div>
-        </div>
-
-        <div className="panel results-panel">
-          <div className="section-title">
-            <h2>Results</h2>
-            {r && <div className="actions">
-              <button onClick={copyResults}>{copied ? 'Copied' : 'Copy JSON'}</button>
-              <button onClick={downloadResults}>Download</button>
-            </div>}
-          </div>
-
-          {!r && <div className="empty">
-            <div className="empty-mark">↗</div>
-            <strong>No result yet</strong>
-            <span>Start a benchmark to populate SET, GET, latency and memory metrics.</span>
-          </div>}
-
-          {r && <div className="metrics">
-            <article><span>SET throughput</span><strong>{speed(r.load.ops_per_second)}</strong><small>p95 {us(r.load.p95_ns)}</small></article>
-            <article><span>GET throughput</span><strong>{speed(r.get.ops_per_second)}</strong><small>p95 {us(r.get.p95_ns)}</small></article>
-            <article><span>Memory / key</span><strong>{r.load.bytes_per_key_delta.toFixed(2)} B</strong><small>{bytes(r.load.used_memory_delta)} B delta</small></article>
-            <article><span>Dataset</span><strong>{nf.format(r.load.keys)}</strong><small>{r.load.value_bytes} B values</small></article>
-          </div>}
-
-          {job?.error && <div className="error-box">{job.error}</div>}
-
-          <div className="log-wrap">
-            <div className="log-title">Live output</div>
-            <pre>{job?.log || 'Waiting for benchmark…'}</pre>
+              <div className="metric-row">
+                <article className="metric-tile">
+                  <span>SET</span>
+                  <strong>{r ? nf.format(Math.round(r.load.ops_per_second)) : '—'}</strong>
+                  <small>ops/s{r ? ` · p95 ${us(r.load.p95_ns)}` : ''}</small>
+                </article>
+                <article className="metric-tile">
+                  <span>GET</span>
+                  <strong>{r ? nf.format(Math.round(r.get.ops_per_second)) : '—'}</strong>
+                  <small>ops/s{r ? ` · p95 ${us(r.get.p95_ns)}` : ''}</small>
+                </article>
+                <article className="metric-tile">
+                  <span>Memory</span>
+                  <strong>{r ? `${(r.load.used_memory_delta / 1024 / 1024).toFixed(1)}` : '—'}</strong>
+                  <small>MB delta</small>
+                </article>
+                <article className="metric-tile">
+                  <span>Bytes/key</span>
+                  <strong>{r ? r.load.bytes_per_key_delta.toFixed(2) : '—'}</strong>
+                  <small>B/key</small>
+                </article>
+              </div>
+            </section>
           </div>
         </div>
 
-        <aside className="panel best-panel">
-          <div className="section-title best-title">
+        <aside className="best-sidebar">
+          <div className="best-sidebar-head">
             <div>
               <h2>Best results</h2>
-              <small>{profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile}</small>
+              <span>{selectedProfileLabel}</span>
             </div>
-            <button className="copy-bests" onClick={copyProfileBests}>
+            <button className="copy-all-btn" onClick={copyProfileBests}>
+              <span>⧉</span>
               {bestCopied ? 'Copied' : 'Copy all'}
             </button>
           </div>
 
-          <div className="best-stack">
+          <div className="best-list">
             {([
               ['redis', 'Redis'],
               ['snug-raw', 'SnugKV raw'],
@@ -328,30 +367,32 @@ function App() {
             ] as const).map(([key, label]) => {
               const result = best[key]
               return (
-                <article className="best-card" key={key}>
-                  <div className="best-card-head">
+                <article className="best-result-card" key={key}>
+                  <div className="best-result-title">
+                    <span className={`result-dot ${key}`} />
                     <strong>{label}</strong>
-                    <span>{result ? `${result.runs} run${result.runs === 1 ? '' : 's'}` : 'No result'}</span>
                   </div>
                   {result ? (
-                    <div className="best-values">
-                      <div><span>Best SET</span><strong>{speed(result.bestSet)}</strong></div>
-                      <div><span>Best GET</span><strong>{speed(result.bestGet)}</strong></div>
-                      <div><span>Lowest B/key</span><strong>{Number.isFinite(result.lowestBytesPerKey) ? `${result.lowestBytesPerKey.toFixed(2)} B` : '—'}</strong></div>
-                    </div>
+                    <dl>
+                      <div><dt>Best SET</dt><dd>{nf.format(Math.round(result.bestSet))} /s</dd></div>
+                      <div><dt>Best GET</dt><dd>{nf.format(Math.round(result.bestGet))} /s</dd></div>
+                      <div><dt>Lowest B/key</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'} B</dd></div>
+                      <div><dt>Runs</dt><dd>{result.runs}</dd></div>
+                    </dl>
                   ) : (
-                    <div className="best-empty">Run this profile on {label} to establish a baseline.</div>
+                    <div className="no-best">No recorded result</div>
                   )}
                 </article>
               )
             })}
           </div>
-
-          <div className="best-note">
-            Best throughput values are maxima across recorded runs; memory is the lowest bytes/key observed.
-          </div>
         </aside>
       </section>
+
+      <footer className="app-footer">
+        <div><span>Skv</span><span>v0.1.0</span></div>
+        <div><span>SnugKV Benchmark Lab</span><span className="local-indicator" /> <span>Local</span></div>
+      </footer>
     </main>
   )
 }
