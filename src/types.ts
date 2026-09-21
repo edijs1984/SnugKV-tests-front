@@ -36,9 +36,13 @@ export type OptimizationProgress = {
   elapsed_ms: number
   used_memory: number
   optimizer_rewritten?: number
+  optimizer_rewritten_run?: number
   optimizer_queue_depth?: number
   arena_bytes?: number
   arena_payload_bytes?: number
+  arena_live_block_bytes?: number
+  estimated_final_memory?: number
+  estimated_final_bytes_per_key?: number
   start_used_memory?: number
 }
 
