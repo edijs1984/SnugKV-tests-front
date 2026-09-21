@@ -113,6 +113,7 @@ function loginShellExecutable(name) {
 function goPath() {
   return firstExecutable([
     process.env.SNUGKV_GO_BIN,
+    join(os.homedir(), 'Downloads', 'go1.27.1.linux-amd64', 'go', 'bin', 'go'),
     loginShellExecutable('go'),
     executableFromPath('go'),
     '/usr/local/go/bin/go',
