@@ -22,7 +22,7 @@ const initial: BenchmarkConfig = {
   getOps: 2_000_000,
   workers: 8,
   pipeline: 256,
-  settleMs: 10_000,
+  settleMs: 0,
   seed: 1,
 }
 
@@ -199,8 +199,12 @@ function App() {
   const optimizationStartMB = optimization?.start_used_memory ? optimization.start_used_memory / 1024 / 1024 : 0
   const optimizationCurrentMB = optimization?.used_memory ? optimization.used_memory / 1024 / 1024 : 0
   const optimizationSavedMB = optimization ? Math.max(0, optimizationStartMB - optimizationCurrentMB) : 0
+  const rewrittenRun = Number(optimization?.optimizer_rewritten_run || 0)
   const optimizationProgress = optimization && config.keys > 0
-    ? Math.min(100, (Number(optimization.optimizer_rewritten || 0) / config.keys) * 100)
+    ? Math.min(100, (rewrittenRun / config.keys) * 100)
+    : 0
+  const estimatedFinalMB = optimization?.estimated_final_memory
+    ? optimization.estimated_final_memory / 1024 / 1024
     : 0
 
   return (
@@ -340,15 +344,21 @@ function App() {
                     <span>
                       from {optimizationStartMB.toFixed(1)} MB
                       {optimizationSavedMB > 0 ? ` · saved ${optimizationSavedMB.toFixed(1)} MB` : ''}
+                      {estimatedFinalMB > 0 ? ` · est. final ${estimatedFinalMB.toFixed(1)} MB` : ''}
                     </span>
                   </div>
 
                   <div className="optimization-bar" aria-label="Optimization progress">
                     <i style={{ width: `${optimizationProgress}%` }} />
                   </div>
+                  {optimization?.estimated_final_bytes_per_key !== undefined && (
+                    <div className="optimization-estimate">
+                      Estimated final <b>{optimization.estimated_final_bytes_per_key.toFixed(1)} B/key</b>
+                    </div>
+                  )}
 
                   <div className="optimization-stats">
-                    <span>Rewritten <b>{nf.format(Number(optimization.optimizer_rewritten || 0))}</b> / {nf.format(config.keys)}</span>
+                    <span>Rewritten <b>{nf.format(rewrittenRun)}</b> / {nf.format(config.keys)}</span>
                     <span>Queue <b>{nf.format(Number(optimization.optimizer_queue_depth || 0))}</b></span>
                     {optimization.arena_payload_bytes !== undefined && (
                       <span>Payload <b>{(optimization.arena_payload_bytes / 1024 / 1024).toFixed(1)} MB</b></span>
