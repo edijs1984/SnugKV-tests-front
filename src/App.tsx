@@ -53,36 +53,23 @@ function App() {
   }, [config])
 
   useEffect(() => {
-    if (!job || job.status !== 'running') return
-    const timer = window.setInterval(async () => {
-      const res = await fetch(`/api/jobs/${job.id}`)
-      if (!res.ok) return
-      const next = await res.json() as Job
+    return window.snugBench.onUpdate((next: Job) => {
       setJob(next)
-      if (next.status !== 'running') {
-        setBusy(false)
-        window.clearInterval(timer)
-      }
-    }, 700)
-    return () => window.clearInterval(timer)
-  }, [job?.id, job?.status])
+      if (next.status !== 'running') setBusy(false)
+    })
+  }, [])
 
   async function run() {
     setBusy(true)
     setCopied(false)
     setJob(null)
-    const res = await fetch('/api/jobs', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(config),
-    })
-    const data = await res.json()
-    if (!res.ok) {
+    try {
+      const data = await window.snugBench.start(config)
+      setJob(data)
+    } catch (error) {
       setBusy(false)
-      alert(data.error ?? 'Failed to start benchmark')
-      return
+      alert(error instanceof Error ? error.message : String(error))
     }
-    setJob(data)
   }
 
   async function copyResults() {
@@ -95,17 +82,12 @@ function App() {
     setTimeout(() => setCopied(false), 1500)
   }
 
-  function downloadResults() {
+  async function downloadResults() {
     if (!job?.results) return
-    const blob = new Blob([JSON.stringify({ config, results: job.results }, null, 2)], {
-      type: 'application/json',
+    await window.snugBench.save({
+      filename: `snugkv-${config.profile}-${config.server}-${Date.now()}.json`,
+      data: { config, results: job.results },
     })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `snugkv-${config.profile}-${config.server}-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   function field<K extends keyof BenchmarkConfig>(key: K, value: BenchmarkConfig[K]) {
@@ -159,9 +141,12 @@ function App() {
             <code>{command}</code>
           </div>
 
-          <button className="run-button" disabled={busy} onClick={run}>
-            {busy ? 'Benchmark running…' : 'Run benchmark'}
-          </button>
+          <div className="run-row">
+            <button className="run-button" disabled={busy} onClick={run}>
+              {busy ? 'Benchmark running…' : 'Run benchmark'}
+            </button>
+            {busy && <button className="cancel-button" onClick={() => window.snugBench.cancel()}>Cancel</button>}
+          </div>
         </div>
 
         <div className="panel results-panel">
