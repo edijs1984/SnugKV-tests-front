@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run electron:dev",
     "dev:web": "vite",
-    "electron:dev": "concurrently -k -n web,electron \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "electron:dev": "concurrently -k -n web,electron \"vite\" \"wait-on tcp:5173 && electron --no-sandbox .\"",
     "build": "tsc -b && vite build",
     "electron:dist": "npm run build && electron-builder",
     "preview": "vite preview"
