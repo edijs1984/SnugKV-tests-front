@@ -58,3 +58,16 @@ pre { margin: 0; padding: 14px; height: 315px; overflow: auto; white-space: pre-
 .error-box { border: 1px solid rgba(255,91,105,.34); background: rgba(255,91,105,.08); color: #ff9da5; border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; }
 @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } .results-panel { min-height: auto; } }
 @media (max-width: 620px) { .shell { padding: 24px 14px 55px; } .topbar { flex-direction: column; } .form-grid, .metrics { grid-template-columns: 1fr; } }
+
+.server-control { margin-bottom: 18px; border: 1px solid #26313b; background: #0a0f14; border-radius: 13px; padding: 14px; }
+.server-control-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.server-control-head > div { display: flex; flex-direction: column; gap: 3px; }
+.server-kicker { color: #70808f; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.server-control-head strong { font-size: 14px; }
+.server-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.server-buttons button { border: 1px solid #28333e; background: #111820; color: #d7e0e9; border-radius: 10px; padding: 10px 9px; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.server-buttons button small { color: #71808e; font-size: 10px; }
+.server-buttons button.active { border-color: #4bd18d; background: rgba(75, 209, 141, .09); box-shadow: inset 0 0 0 1px rgba(75, 209, 141, .08); }
+.server-buttons button:disabled, .stop-server:disabled { opacity: .45; cursor: not-allowed; }
+.stop-server { border: 1px solid #3a2a30; background: #1a1014; color: #ff98a4; border-radius: 8px; padding: 7px 10px; font-size: 11px; font-weight: 800; }
+.server-note { display: block; margin-top: 10px; color: #63717f; font-size: 10px; line-height: 1.45; }
