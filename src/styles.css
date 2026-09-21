@@ -416,3 +416,49 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   color: #ffb27b;
   font-weight: 700;
 }
+
+
+.optimizer-mode-block {
+  margin: 4px 0 20px;
+  padding: 14px;
+  border: 1px solid #2d343c;
+  border-radius: 10px;
+  background: #101419;
+}
+.optimizer-mode-label {
+  display: block;
+  margin-bottom: 9px;
+  color: #a0a9b3;
+  font-size: 12px;
+  font-weight: 700;
+}
+.optimizer-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.optimizer-mode-switch button {
+  border: 1px solid #353c44;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #151a20;
+  color: #aab2ba;
+  font-size: 12px;
+  font-weight: 700;
+}
+.optimizer-mode-switch button.active {
+  border-color: #ff7a1a;
+  background: rgba(255, 122, 26, .08);
+  color: #ff9b55;
+}
+.optimizer-mode-switch button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.optimizer-mode-block small {
+  display: block;
+  margin-top: 9px;
+  color: #6f7a85;
+  font-size: 10px;
+  line-height: 1.4;
+}
