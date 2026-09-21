@@ -51,6 +51,9 @@
       "target": [
         "nsis"
       ]
+    },
+    "directories": {
+      "output": "release"
     }
   }
 }
