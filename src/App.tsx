@@ -346,12 +346,24 @@ function App() {
                 <article className="metric-tile">
                   <span>Memory</span>
                   <strong>{r ? `${(r.load.used_memory_delta / 1024 / 1024).toFixed(1)}` : '—'}</strong>
-                  <small>MB delta</small>
+                  <small>
+                    {r
+                      ? r.load.used_memory_post_workload_delta !== undefined
+                        ? `final MB · hot ${(r.load.used_memory_post_workload_delta / 1024 / 1024).toFixed(1)} MB`
+                        : 'MB delta'
+                      : 'MB delta'}
+                  </small>
                 </article>
                 <article className="metric-tile">
                   <span>Bytes/key</span>
                   <strong>{r ? r.load.bytes_per_key_delta.toFixed(2) : '—'}</strong>
-                  <small>B/key</small>
+                  <small>
+                    {r
+                      ? r.load.bytes_per_key_post_workload !== undefined
+                        ? `final · hot ${r.load.bytes_per_key_post_workload.toFixed(2)} B${r.load.converge_ms ? ` · ${r.load.converged ? 'converged' : 'timeout'}` : ''}`
+                        : 'B/key'
+                      : 'B/key'}
+                  </small>
                 </article>
               </div>
             </section>
