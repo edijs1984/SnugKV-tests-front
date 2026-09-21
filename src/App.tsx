@@ -41,6 +41,7 @@ function App() {
   const [serverBusy, setServerBusy] = useState(false)
   const [appError, setAppError] = useState<string | null>(null)
   const [bestCopied, setBestCopied] = useState(false)
+  const [resettingBest, setResettingBest] = useState(false)
   const [best, setBest] = useState<ProfileBestResults>({
     redis: null,
     'snug-raw': null,
@@ -132,6 +133,22 @@ function App() {
     } catch (error) {
       setBusy(false)
       setAppError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function resetProfileBests() {
+    const profileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
+    if (!window.confirm(`Reset all recorded best results for ${profileLabel}? Raw benchmark files will be kept.`)) return
+
+    setResettingBest(true)
+    setAppError(null)
+    try {
+      const next = await window.snugBench.resetBestResults(config.profile)
+      setBest(next)
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setResettingBest(false)
     }
   }
 
@@ -458,10 +475,15 @@ function App() {
               <h2>Best results</h2>
               <span>{selectedProfileLabel}</span>
             </div>
-            <button className="copy-all-btn" onClick={copyProfileBests}>
-              <span>⧉</span>
-              {bestCopied ? 'Copied' : 'Copy all'}
-            </button>
+            <div className="best-head-actions">
+              <button className="reset-bests-btn" disabled={resettingBest} onClick={resetProfileBests}>
+                {resettingBest ? 'Resetting…' : 'Reset bests'}
+              </button>
+              <button className="copy-all-btn" onClick={copyProfileBests}>
+                <span>⧉</span>
+                {bestCopied ? 'Copied' : 'Copy all'}
+              </button>
+            </div>
           </div>
 
           <div className="best-list">
