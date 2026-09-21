@@ -517,6 +517,8 @@ function createWindow() {
     },
   })
 
+  mainWindow.removeMenu()
+
   if (app.isPackaged) {
     mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
   } else {
