@@ -24,6 +24,12 @@ export type BenchResult = {
   p99_ns: number
   used_memory_delta: number
   bytes_per_key_delta: number
+  used_memory_post_workload_delta?: number
+  bytes_per_key_post_workload?: number
+  converge_ms?: number
+  converged?: boolean
+  convergence_elapsed_ms?: number
+  convergence_samples?: number
 }
 
 export type Job = {
