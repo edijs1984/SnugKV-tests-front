@@ -318,3 +318,90 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
 .app-error-banner strong { font-size: 12px; color: #ffd0d0; }
 .app-error-banner span { font: 11px/1.4 "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; }
 .app-error-banner button { border: 0; background: transparent; color: #ff9c9c; font-size: 18px; line-height: 1; padding: 0 2px; }
+
+
+.optimization-card {
+  border: 1px solid rgba(255, 122, 26, .42);
+  background: linear-gradient(180deg, rgba(255, 122, 26, .08), rgba(17, 21, 26, .96));
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 0 28px rgba(255, 122, 26, .06);
+}
+.optimization-head,
+.optimization-memory,
+.optimization-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.optimization-head > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.optimization-head strong {
+  font-size: 14px;
+  color: #f4f6f8;
+}
+.optimization-head > span {
+  color: #ff9b55;
+  font: 700 13px/1 "SFMono-Regular", Consolas, monospace;
+}
+.optimization-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff7a1a;
+  box-shadow: 0 0 0 0 rgba(255, 122, 26, .45);
+  animation: optimization-pulse 1.35s infinite;
+}
+.optimization-memory {
+  margin-top: 14px;
+  align-items: baseline;
+}
+.optimization-memory strong {
+  font-size: 30px;
+  letter-spacing: -.03em;
+  color: #fff;
+}
+.optimization-memory span {
+  color: #8f99a4;
+  font-size: 12px;
+}
+.optimization-bar {
+  height: 8px;
+  margin-top: 13px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #242a30;
+}
+.optimization-bar i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff7a1a, #ff9b55);
+  transition: width .35s ease;
+}
+.optimization-stats {
+  margin-top: 12px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  color: #7f8994;
+  font: 11px/1.3 "SFMono-Regular", Consolas, monospace;
+}
+.optimization-stats span:last-child {
+  margin-left: auto;
+}
+.optimization-stats b {
+  color: #dfe4e8;
+  font-weight: 700;
+}
+
+@keyframes optimization-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 122, 26, .42); }
+  70% { box-shadow: 0 0 0 7px rgba(255, 122, 26, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 122, 26, 0); }
+}
