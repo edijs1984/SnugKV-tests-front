@@ -73,6 +73,9 @@
     "executableName": "skv-benchmark-lab"
   },
   "description": "Desktop benchmark lab for Redis and SnugKV.",
-  "author": "Edijs Ziedins",
+  "author": {
+    "name": "Edijs Ziedins",
+    "email": "46107922+edijs1984@users.noreply.github.com"
+  },
   "desktopName": "dev.snugkv.benchmarklab.desktop"
 }
