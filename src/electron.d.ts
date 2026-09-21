@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode } from './types'
 
 export {}
 
@@ -11,7 +11,7 @@ declare global {
       save(payload: { filename: string; data: unknown }): Promise<{ saved: boolean; path?: string }>
       onUpdate(callback: (job: Job) => void): () => void
       serverStatus(): Promise<ServerStatus>
-      startServer(kind: 'redis' | 'snug-raw' | 'snug-opt'): Promise<ServerStatus>
+      startServer(kind: 'redis' | 'snug-raw' | 'snug-opt', optimizerMode?: OptimizerMode): Promise<ServerStatus>
       stopServer(): Promise<ServerStatus>
       onServerUpdate(callback: (status: ServerStatus) => void): () => void
       bestResults(profile: string): Promise<ProfileBestResults>
