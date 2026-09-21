@@ -39,3 +39,10 @@ export type Job = {
     get: BenchResult
   }
 }
+
+export type ServerStatus = {
+  running: boolean
+  kind?: 'redis' | 'snug-raw' | 'snug-opt'
+  port?: number
+  label?: string
+}
