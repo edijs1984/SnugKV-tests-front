@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
 
 export {}
 
@@ -14,6 +14,8 @@ declare global {
       startServer(kind: 'redis' | 'snug-raw' | 'snug-opt'): Promise<ServerStatus>
       stopServer(): Promise<ServerStatus>
       onServerUpdate(callback: (status: ServerStatus) => void): () => void
+      bestResults(profile: string): Promise<ProfileBestResults>
+      onHistoryUpdate(callback: (payload: { profile: string; best: ProfileBestResults }) => void): () => void
     }
   }
 }
