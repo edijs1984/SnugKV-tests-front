@@ -4,27 +4,53 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "npm run electron:dev",
     "dev:web": "vite",
-    "dev:api": "tsx watch server/index.ts",
+    "electron:dev": "concurrently -k -n web,electron \"vite\" \"wait-on tcp:5173 && electron .\"",
     "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "start": "tsx server/index.ts"
+    "electron:dist": "npm run build && electron-builder",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "express": "latest",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"
   },
   "devDependencies": {
-    "@types/express": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "concurrently": "latest",
-    "tsx": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "wait-on": "latest"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "dev.snugkv.benchmarklab",
+    "productName": "SnugKV Benchmark Lab",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   }
 }
