@@ -46,7 +46,7 @@ npm install
 npm run electron:dev
 ```
 
-`npm run dev` is an alias for the Electron development mode.
+`npm run dev` is an alias for the Electron development mode. On Linux the development command launches Electron with `--no-sandbox` so Chromium does not require a root-owned SUID `chrome-sandbox` helper inside `node_modules`.
 
 The Vite renderer starts locally, then Electron opens the desktop window. There is no Express server.
 
