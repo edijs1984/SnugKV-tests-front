@@ -34,7 +34,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "build/icons/**/*"
     ],
     "linux": {
       "target": [
