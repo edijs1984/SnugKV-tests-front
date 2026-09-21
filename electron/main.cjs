@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const { join, resolve } = require('node:path')
@@ -52,49 +52,98 @@ function scriptPath() {
   return join(snugRepo(), 'scripts', 'bench', 'bench-one.sh')
 }
 function runtimeEnv() {
-  const extra = [
-    '/usr/local/go/bin',
-    join(os.homedir(), 'go', 'bin'),
+  const current = String(process.env.PATH || '').split(':').filter(Boolean)
+  const fallback = [
     '/usr/local/bin',
     '/usr/bin',
     '/bin',
     '/usr/local/sbin',
     '/usr/sbin',
     '/sbin',
+    '/usr/local/go/bin',
+    join(os.homedir(), 'go', 'bin'),
   ]
-  const current = String(process.env.PATH || '').split(':').filter(Boolean)
   return {
     ...process.env,
-    PATH: [...new Set([...extra, ...current])].join(':'),
+    PATH: [...new Set([...current, ...fallback])].join(':'),
   }
+}
+
+function executableFromPath(name) {
+  const dirs = String(process.env.PATH || '').split(':').filter(Boolean)
+  for (const dir of dirs) {
+    const candidate = join(dir, name)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
 }
 
 function firstExecutable(candidates) {
   for (const candidate of candidates) {
-    if (candidate && existsSync(candidate)) return candidate
+    if (!candidate) continue
+    if (!candidate.includes('/') || existsSync(candidate)) return candidate
   }
   return candidates[candidates.length - 1]
 }
 
 function bashPath() {
-  return firstExecutable(['/bin/bash', '/usr/bin/bash', 'bash'])
+  return firstExecutable([executableFromPath('bash'), '/bin/bash', '/usr/bin/bash', 'bash'])
+}
+
+function parseGoVersion(binary) {
+  try {
+    const result = spawnSync(binary, ['version'], {
+      env: runtimeEnv(),
+      encoding: 'utf8',
+      timeout: 3000,
+    })
+    if (result.status !== 0) return null
+    const match = String(result.stdout || result.stderr || '').match(/go(\d+)\.(\d+)(?:\.(\d+))?/)
+    if (!match) return null
+    return {
+      binary,
+      version: [Number(match[1]), Number(match[2]), Number(match[3] || 0)],
+      text: match[0],
+    }
+  } catch {
+    return null
+  }
+}
+
+function compareVersion(a, b) {
+  for (let i = 0; i < 3; i += 1) {
+    if (a.version[i] !== b.version[i]) return b.version[i] - a.version[i]
+  }
+  return 0
 }
 
 function goPath() {
-  return firstExecutable([
+  const candidates = [...new Set([
+    process.env.SNUGKV_GO_BIN,
+    executableFromPath('go'),
     '/usr/local/go/bin/go',
     '/usr/bin/go',
+    '/usr/local/bin/go',
+    join(os.homedir(), '.local', 'go', 'bin', 'go'),
     join(os.homedir(), 'go', 'bin', 'go'),
-    'go',
-  ])
+  ].filter(Boolean))]
+
+  const versions = candidates
+    .filter(candidate => !candidate.includes('/') || existsSync(candidate))
+    .map(parseGoVersion)
+    .filter(Boolean)
+    .sort(compareVersion)
+
+  if (versions.length > 0) return versions[0].binary
+  return 'go'
 }
 
 function redisServerPath() {
-  return firstExecutable(['/usr/bin/redis-server', '/usr/local/bin/redis-server', 'redis-server'])
+  return firstExecutable([executableFromPath('redis-server'), '/usr/bin/redis-server', '/usr/local/bin/redis-server', 'redis-server'])
 }
 
 function fuserPath() {
-  return firstExecutable(['/usr/bin/fuser', '/bin/fuser', 'fuser'])
+  return firstExecutable([executableFromPath('fuser'), '/usr/bin/fuser', '/bin/fuser', 'fuser'])
 }
 
 function windowIconPath() {
