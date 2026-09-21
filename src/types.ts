@@ -1,3 +1,5 @@
+export type OptimizerMode = 'dedicated' | 'sidecar'
+
 export type BenchmarkConfig = {
   profile: string
   host: string
@@ -9,6 +11,7 @@ export type BenchmarkConfig = {
   pipeline: number
   settleMs: number
   seed: number
+  optimizerMode?: OptimizerMode
 }
 
 export type BenchResult = {
@@ -66,6 +69,7 @@ export type ServerStatus = {
   kind?: 'redis' | 'snug-raw' | 'snug-opt'
   port?: number
   label?: string
+  optimizerMode?: OptimizerMode
 }
 
 export type BestServerResult = {
