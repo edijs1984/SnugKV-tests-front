@@ -1,25 +1,28 @@
 # SnugKV Benchmark Lab
 
-Local React UI for the published SnugKV black-box benchmark profiles.
+Desktop Electron + React UI for SnugKV's published Redis-compatible benchmark profiles.
 
-The UI does **not** start or stop Redis/SnugKV. Start the target server yourself, then point the UI at its host and port. The local Node API invokes the same `scripts/bench/bench-one.sh` used by the CLI so browser and CLI results remain comparable.
+The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containers. Start the target server yourself and point the app at its host and port. Electron invokes the same `scripts/bench/bench-one.sh` used by the CLI, so desktop and terminal results remain comparable.
 
 ## Features
 
-- Test profile dropdown: cache JSON, session JSON, API JSON, counter, UUID, text, compressible, already-compressed, random.
-- Editable host, port, label, key count, GET operations, workers, pipeline, settle time and seed.
-- Live benchmark output.
-- SET throughput, GET throughput, p95 latency, bytes/key and memory delta.
+- Native Electron desktop app.
+- React/Vite renderer.
+- Test profiles: cached JSON, session JSON, API JSON, counter, UUID, text, compressible, already-compressed, random.
+- Editable host, port, result label, key count, GET operations, workers, pipeline, settle time, and seed.
+- Live benchmark output streamed directly from the child process.
+- SET throughput, GET throughput, p95 latency, bytes/key, and memory delta.
 - Copy result JSON.
-- Download result JSON.
-- Shows the equivalent CLI command before running.
-- No Docker or server lifecycle management.
+- Native Save dialog for result JSON.
+- Cancel running benchmark.
+- Shows the equivalent CLI command.
+- No Docker or database lifecycle management.
 
 > **Warning:** the benchmark runs `FLUSHDB` on the selected target.
 
-## Run locally
+## Expected directory layout
 
-The easiest layout is:
+The default development setup is:
 
 ```text
 ~/Downloads/
@@ -27,49 +30,91 @@ The easiest layout is:
   SnugKV-tests-front/
 ```
 
-Then:
+The Electron app automatically looks for `../SnugKV`.
+
+If your SnugKV checkout is somewhere else, set:
+
+```bash
+export SNUGKV_REPO=/absolute/path/to/SnugKV
+```
+
+## Run the Electron app
 
 ```bash
 cd ~/Downloads/SnugKV-tests-front
 npm install
-npm run dev
+npm run electron:dev
 ```
 
-Open http://localhost:5173.
+`npm run dev` is an alias for the Electron development mode.
 
-If SnugKV is elsewhere:
+The Vite renderer starts locally, then Electron opens the desktop window. There is no Express server.
+
+## Build the renderer
 
 ```bash
-SNUGKV_REPO=/absolute/path/to/SnugKV npm run dev
+npm run build
 ```
 
-The API listens on `127.0.0.1:8787` by default.
+## Build a desktop package
+
+On Linux:
+
+```bash
+npm run electron:dist
+```
+
+The configured Linux target is AppImage. The project also has basic DMG and NSIS targets for macOS and Windows.
+
+The packaged app still needs access to a SnugKV checkout containing:
+
+```text
+scripts/bench/bench-one.sh
+cmd/rediswirebench
+```
+
+Set `SNUGKV_REPO` when launching the app if that checkout is not next to the application project.
 
 ## CLI parity
 
-For example, configuring UUID / Redis / port 6390 in the UI runs the equivalent of:
+For UUID against Redis on port 6390, the UI executes the equivalent of:
 
 ```bash
-bash scripts/bench/bench-one.sh uuid -p 6390 -h 127.0.0.1 -s redis \
-  -k 1000000 -g 2000000 -w 8 -P 256 --settle-ms 10000 --seed 1
+bash scripts/bench/bench-one.sh uuid \
+  -p 6390 \
+  -h 127.0.0.1 \
+  -s redis \
+  -k 1000000 \
+  -g 2000000 \
+  -w 8 \
+  -P 256 \
+  --settle-ms 10000 \
+  --seed 1
 ```
 
 ## Architecture
 
 ```text
-React/Vite UI
-    |
-    | HTTP localhost
-    v
-small Express runner
-    |
-    | spawn bash
-    v
-SnugKV/scripts/bench/bench-one.sh
+Electron
+├── Main process
+│   ├── launches bench-one.sh
+│   ├── streams stdout/stderr
+│   ├── reads load.json + get.json
+│   └── native Save dialog
+│
+├── Preload
+│   └── narrow context-isolated IPC API
+│
+└── React/Vite renderer
+    ├── benchmark configuration
+    ├── live output
+    └── result cards / copy / save
+
+bench-one.sh
     |
     | RESP2/TCP
     v
 server you started manually
 ```
 
-This repository intentionally contains no Redis/SnugKV server startup logic.
+The renderer has no Node integration. Shell execution stays in the Electron main process behind the preload IPC bridge.
