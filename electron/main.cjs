@@ -489,7 +489,10 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
 
   const child = spawn(bashPath(), args, {
     cwd: snugRepo(),
-    env: runtimeEnv(),
+    env: {
+      ...runtimeEnv(),
+      SNUGKV_GO_BIN: goPath(),
+    },
   })
   activeChild = child
 
