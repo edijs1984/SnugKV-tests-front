@@ -12,21 +12,26 @@ body { margin: 0; min-width: 320px; min-height: 100vh; background:
 }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
-.shell { max-width: 1420px; margin: 0 auto; padding: 42px 28px 80px; }
-.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
-.eyebrow { color: #78f0b2; font-size: 12px; font-weight: 800; letter-spacing: .16em; }
-h1 { font-size: clamp(30px, 4vw, 52px); line-height: 1; margin: 9px 0 12px; letter-spacing: -.045em; }
-.topbar p { color: #8995a4; margin: 0; font-size: 16px; }
+.shell { max-width: 1580px; margin: 0 auto; padding: 18px 20px 42px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+.topbar.compact { min-height: 44px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: #68e8a5; color: #07110c; font-weight: 950; }
+.brand > div:last-child { display: flex; flex-direction: column; gap: 1px; }
+.brand strong { font-size: 14px; letter-spacing: -.01em; }
+.brand span { color: #71808e; font-size: 10px; }
 .status { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #242c36; background: #11161c; border-radius: 999px; padding: 9px 13px; color: #9aa7b5; text-transform: uppercase; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
 .status span { width: 7px; height: 7px; border-radius: 50%; background: #59636f; }
 .status.running span { background: #f5b84b; box-shadow: 0 0 14px #f5b84b; }
 .status.done span { background: #66e6a3; box-shadow: 0 0 14px #66e6a3; }
 .status.failed span { background: #ff6d77; box-shadow: 0 0 14px #ff6d77; }
-.grid { display: grid; grid-template-columns: minmax(420px, .9fr) minmax(500px, 1.1fr); gap: 18px; }
+.grid { display: grid; grid-template-columns: minmax(390px, .86fr) minmax(470px, 1.08fr); gap: 14px; }
+.grid.three-col { grid-template-columns: minmax(380px, .9fr) minmax(460px, 1.08fr) minmax(250px, .62fr); align-items: start; }
 .panel { border: 1px solid #222a34; background: rgba(15,20,26,.92); border-radius: 18px; box-shadow: 0 18px 70px rgba(0,0,0,.22); }
-.config-panel { padding: 24px; }
-.results-panel { padding: 24px; min-height: 650px; }
-.section-title { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 22px; }
+.config-panel { padding: 18px; }
+.results-panel { padding: 18px; min-height: 610px; }
+.best-panel { padding: 16px; position: sticky; top: 14px; }
+.section-title { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 14px; }
 .section-title h2 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
 .section-title small { color: #74808d; }
 .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
@@ -56,8 +61,9 @@ input:focus, select:focus { border-color: #4bd18d; box-shadow: 0 0 0 3px rgba(75
 .log-title { padding: 10px 13px; border-bottom: 1px solid #1c242c; color: #687683; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 pre { margin: 0; padding: 14px; height: 315px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: #9eabb8; font: 11px/1.55 "SFMono-Regular", Consolas, monospace; }
 .error-box { border: 1px solid rgba(255,91,105,.34); background: rgba(255,91,105,.08); color: #ff9da5; border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; }
-@media (max-width: 980px) { .grid { grid-template-columns: 1fr; } .results-panel { min-height: auto; } }
-@media (max-width: 620px) { .shell { padding: 24px 14px 55px; } .topbar { flex-direction: column; } .form-grid, .metrics { grid-template-columns: 1fr; } }
+@media (max-width: 1220px) { .grid.three-col { grid-template-columns: minmax(380px, .9fr) minmax(470px, 1.1fr); } .best-panel { grid-column: 1 / -1; position: static; } .best-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .grid, .grid.three-col { grid-template-columns: 1fr; } .best-panel { grid-column: auto; } .best-stack { grid-template-columns: 1fr; } .results-panel { min-height: auto; } }
+@media (max-width: 620px) { .shell { padding: 14px 10px 32px; } .form-grid, .metrics { grid-template-columns: 1fr; } }
 
 .server-control { margin-bottom: 18px; border: 1px solid #26313b; background: #0a0f14; border-radius: 13px; padding: 14px; }
 .server-control-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -71,3 +77,18 @@ pre { margin: 0; padding: 14px; height: 315px; overflow: auto; white-space: pre-
 .server-buttons button:disabled, .stop-server:disabled { opacity: .45; cursor: not-allowed; }
 .stop-server { border: 1px solid #3a2a30; background: #1a1014; color: #ff98a4; border-radius: 8px; padding: 7px 10px; font-size: 11px; font-weight: 800; }
 .server-note { display: block; margin-top: 10px; color: #63717f; font-size: 10px; line-height: 1.45; }
+
+.best-title { align-items: flex-start; }
+.best-title > div { display: flex; flex-direction: column; gap: 3px; }
+.best-title small { max-width: 220px; line-height: 1.35; }
+.best-stack { display: grid; grid-template-columns: 1fr; gap: 9px; }
+.best-card { border: 1px solid #222c35; background: #0a0f14; border-radius: 12px; padding: 12px; }
+.best-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.best-card-head strong { font-size: 13px; }
+.best-card-head span { color: #65727f; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.best-values { display: grid; gap: 7px; }
+.best-values > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #182028; padding-top: 7px; }
+.best-values span { color: #71808e; font-size: 10px; }
+.best-values strong { color: #dbe5ee; font-size: 12px; font-variant-numeric: tabular-nums; }
+.best-empty { color: #65727f; font-size: 10px; line-height: 1.45; padding: 4px 0 2px; }
+.best-note { color: #5f6d79; font-size: 9px; line-height: 1.45; margin-top: 10px; padding: 0 2px; }
