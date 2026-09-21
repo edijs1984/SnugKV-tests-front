@@ -32,6 +32,16 @@ export type BenchResult = {
   convergence_samples?: number
 }
 
+export type OptimizationProgress = {
+  elapsed_ms: number
+  used_memory: number
+  optimizer_rewritten?: number
+  optimizer_queue_depth?: number
+  arena_bytes?: number
+  arena_payload_bytes?: number
+  start_used_memory?: number
+}
+
 export type Job = {
   id: string
   status: 'running' | 'done' | 'failed'
@@ -40,6 +50,7 @@ export type Job = {
   error?: string
   startedAt: string
   finishedAt?: string
+  optimization?: OptimizationProgress
   results?: {
     load: BenchResult
     get: BenchResult
