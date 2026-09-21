@@ -462,3 +462,26 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   font-size: 10px;
   line-height: 1.4;
 }
+
+
+.best-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.reset-bests-btn {
+  border: 1px solid rgba(255, 98, 98, .34);
+  background: rgba(120, 25, 25, .12);
+  color: #ff9b9b;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.reset-bests-btn:hover {
+  border-color: rgba(255, 98, 98, .6);
+  background: rgba(120, 25, 25, .2);
+}
+.reset-bests-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
