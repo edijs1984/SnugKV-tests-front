@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BenchmarkConfig, Job, ServerStatus } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -38,6 +38,15 @@ function App() {
   const [copied, setCopied] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
   const [serverBusy, setServerBusy] = useState(false)
+  const [best, setBest] = useState<ProfileBestResults>({
+    redis: null,
+    'snug-raw': null,
+    'snug-opt': null,
+  })
+
+  useEffect(() => {
+    window.snugBench.bestResults(config.profile).then(setBest)
+  }, [config.profile])
 
   const command = useMemo(() => {
     return [
@@ -66,6 +75,9 @@ function App() {
         setConfig(prev => ({ ...prev, host: '127.0.0.1', port: next.port!, server: next.label! }))
       }
     })
+    const offHistory = window.snugBench.onHistoryUpdate(payload => {
+      if (payload.profile === config.profile) setBest(payload.best)
+    })
     window.snugBench.serverStatus().then(next => {
       setServerStatus(next)
       if (next.running && next.port && next.label) {
@@ -75,8 +87,9 @@ function App() {
     return () => {
       offBench()
       offServer()
+      offHistory()
     }
-  }, [])
+  }, [config.profile])
 
   async function startServer(kind: 'redis' | 'snug-raw' | 'snug-opt') {
     setServerBusy(true)
@@ -143,11 +156,13 @@ function App() {
 
   return (
     <main className="shell">
-      <header className="topbar">
-        <div>
-          <div className="eyebrow">SNUGKV / BENCHMARK LAB</div>
-          <h1>Redis-compatible benchmark runner</h1>
-          <p>Run one published SnugKV profile against any server you start yourself.</p>
+      <header className="topbar compact">
+        <div className="brand">
+          <div className="brand-mark">S</div>
+          <div>
+            <strong>SnugKV Benchmark Lab</strong>
+            <span>Redis-compatible performance tests</span>
+          </div>
         </div>
         <div className={`status ${job?.status ?? 'idle'}`}>
           <span />
@@ -155,7 +170,7 @@ function App() {
         </div>
       </header>
 
-      <section className="grid">
+      <section className="grid three-col">
         <div className="panel config-panel">
           <div className="section-title">
             <h2>Test configuration</h2>
@@ -260,6 +275,46 @@ function App() {
             <pre>{job?.log || 'Waiting for benchmark…'}</pre>
           </div>
         </div>
+
+        <aside className="panel best-panel">
+          <div className="section-title best-title">
+            <div>
+              <h2>Best results</h2>
+              <small>{profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile}</small>
+            </div>
+          </div>
+
+          <div className="best-stack">
+            {([
+              ['redis', 'Redis'],
+              ['snug-raw', 'SnugKV raw'],
+              ['snug-opt', 'SnugKV opt'],
+            ] as const).map(([key, label]) => {
+              const result = best[key]
+              return (
+                <article className="best-card" key={key}>
+                  <div className="best-card-head">
+                    <strong>{label}</strong>
+                    <span>{result ? `${result.runs} run${result.runs === 1 ? '' : 's'}` : 'No result'}</span>
+                  </div>
+                  {result ? (
+                    <div className="best-values">
+                      <div><span>Best SET</span><strong>{speed(result.bestSet)}</strong></div>
+                      <div><span>Best GET</span><strong>{speed(result.bestGet)}</strong></div>
+                      <div><span>Lowest B/key</span><strong>{Number.isFinite(result.lowestBytesPerKey) ? `${result.lowestBytesPerKey.toFixed(2)} B` : '—'}</strong></div>
+                    </div>
+                  ) : (
+                    <div className="best-empty">Run this profile on {label} to establish a baseline.</div>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+
+          <div className="best-note">
+            Best throughput values are maxima across recorded runs; memory is the lowest bytes/key observed.
+          </div>
+        </aside>
       </section>
     </main>
   )
