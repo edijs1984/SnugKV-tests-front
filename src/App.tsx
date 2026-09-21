@@ -38,6 +38,7 @@ function App() {
   const [copied, setCopied] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
   const [serverBusy, setServerBusy] = useState(false)
+  const [appError, setAppError] = useState<string | null>(null)
   const [bestCopied, setBestCopied] = useState(false)
   const [best, setBest] = useState<ProfileBestResults>({
     redis: null,
@@ -94,6 +95,7 @@ function App() {
 
   async function startServer(kind: 'redis' | 'snug-raw' | 'snug-opt') {
     setServerBusy(true)
+    setAppError(null)
     try {
       const next = await window.snugBench.startServer(kind)
       setServerStatus(next)
@@ -102,7 +104,7 @@ function App() {
       }
     } catch (error) {
       setServerBusy(false)
-      alert(error instanceof Error ? error.message : String(error))
+      setAppError(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -112,7 +114,7 @@ function App() {
       const next = await window.snugBench.stopServer()
       setServerStatus(next)
     } catch (error) {
-      alert(error instanceof Error ? error.message : String(error))
+      setAppError(error instanceof Error ? error.message : String(error))
     } finally {
       setServerBusy(false)
     }
@@ -120,6 +122,7 @@ function App() {
 
   async function run() {
     setBusy(true)
+    setAppError(null)
     setCopied(false)
     setJob(null)
     try {
@@ -127,7 +130,7 @@ function App() {
       setJob(data)
     } catch (error) {
       setBusy(false)
-      alert(error instanceof Error ? error.message : String(error))
+      setAppError(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -243,6 +246,14 @@ function App() {
               )}
             </div>
           </div>
+
+          {appError && (
+            <div className="app-error-banner">
+              <strong>Action failed</strong>
+              <span>{appError}</span>
+              <button onClick={() => setAppError(null)}>×</button>
+            </div>
+          )}
 
           <div className="bench-layout">
             <section className="config-column">
