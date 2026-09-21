@@ -63,10 +63,15 @@ function runtimeEnv() {
     '/usr/local/go/bin',
     join(os.homedir(), 'go', 'bin'),
   ]
-  return {
+  const env = {
     ...process.env,
     PATH: [...new Set([...current, ...fallback])].join(':'),
   }
+
+  // A stale inherited GOROOT can make a perfectly valid Go binary load
+  // the standard library from the wrong installation.
+  delete env.GOROOT
+  return env
 }
 
 function executableFromPath(name) {
@@ -90,52 +95,33 @@ function bashPath() {
   return firstExecutable([executableFromPath('bash'), '/bin/bash', '/usr/bin/bash', 'bash'])
 }
 
-function parseGoVersion(binary) {
+function loginShellExecutable(name) {
   try {
-    const result = spawnSync(binary, ['version'], {
+    const result = spawnSync('/bin/bash', ['-lc', `command -v ${name}`], {
       env: runtimeEnv(),
       encoding: 'utf8',
       timeout: 3000,
     })
     if (result.status !== 0) return null
-    const match = String(result.stdout || result.stderr || '').match(/go(\d+)\.(\d+)(?:\.(\d+))?/)
-    if (!match) return null
-    return {
-      binary,
-      version: [Number(match[1]), Number(match[2]), Number(match[3] || 0)],
-      text: match[0],
-    }
+    const value = String(result.stdout || '').trim().split('\n')[0]
+    return value || null
   } catch {
     return null
   }
 }
 
-function compareVersion(a, b) {
-  for (let i = 0; i < 3; i += 1) {
-    if (a.version[i] !== b.version[i]) return b.version[i] - a.version[i]
-  }
-  return 0
-}
-
 function goPath() {
-  const candidates = [...new Set([
+  return firstExecutable([
     process.env.SNUGKV_GO_BIN,
+    loginShellExecutable('go'),
     executableFromPath('go'),
     '/usr/local/go/bin/go',
     '/usr/bin/go',
     '/usr/local/bin/go',
     join(os.homedir(), '.local', 'go', 'bin', 'go'),
     join(os.homedir(), 'go', 'bin', 'go'),
-  ].filter(Boolean))]
-
-  const versions = candidates
-    .filter(candidate => !candidate.includes('/') || existsSync(candidate))
-    .map(parseGoVersion)
-    .filter(Boolean)
-    .sort(compareVersion)
-
-  if (versions.length > 0) return versions[0].binary
-  return 'go'
+    'go',
+  ])
 }
 
 function redisServerPath() {
