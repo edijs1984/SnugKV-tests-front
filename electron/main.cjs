@@ -154,6 +154,7 @@ function sanitize(body = {}) {
     pipeline: positiveInt(body.pipeline, 256, 8192),
     settleMs: Math.max(0, Math.min(Number(body.settleMs) || 0, 600_000)),
     seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
+    optimizerMode: body.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated',
   }
 }
 
@@ -534,6 +535,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   const job = {
     id,
     status: 'running',
+    config: c,
     command: ['bash', ...args].join(' '),
     log: '',
     startedAt: new Date().toISOString(),
