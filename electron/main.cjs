@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process')
 const { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const { join, resolve } = require('node:path')
+const os = require('node:os')
 const net = require('node:net')
 
 const profiles = new Set([
@@ -30,7 +31,21 @@ const serverDefs = {
 }
 
 function snugRepo() {
-  return resolve(process.env.SNUGKV_REPO || join(process.cwd(), '..', 'SnugKV'))
+  if (process.env.SNUGKV_REPO) return resolve(process.env.SNUGKV_REPO)
+
+  const candidates = [
+    join(os.homedir(), 'Downloads', 'SnugKV'),
+    join(process.cwd(), '..', 'SnugKV'),
+    join(process.cwd(), 'SnugKV'),
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, 'scripts', 'bench', 'bench-one.sh'))) {
+      return resolve(candidate)
+    }
+  }
+
+  return resolve(join(os.homedir(), 'Downloads', 'SnugKV'))
 }
 
 function scriptPath() {
