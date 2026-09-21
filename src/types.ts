@@ -52,6 +52,7 @@ export type OptimizationProgress = {
 export type Job = {
   id: string
   status: 'running' | 'done' | 'failed'
+  config?: BenchmarkConfig
   command: string
   log: string
   error?: string
