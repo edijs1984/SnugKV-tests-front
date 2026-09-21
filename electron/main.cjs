@@ -51,6 +51,55 @@ function snugRepo() {
 function scriptPath() {
   return join(snugRepo(), 'scripts', 'bench', 'bench-one.sh')
 }
+function runtimeEnv() {
+  const extra = [
+    '/usr/local/go/bin',
+    join(os.homedir(), 'go', 'bin'),
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    '/usr/local/sbin',
+    '/usr/sbin',
+    '/sbin',
+  ]
+  const current = String(process.env.PATH || '').split(':').filter(Boolean)
+  return {
+    ...process.env,
+    PATH: [...new Set([...extra, ...current])].join(':'),
+  }
+}
+
+function firstExecutable(candidates) {
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) return candidate
+  }
+  return candidates[candidates.length - 1]
+}
+
+function bashPath() {
+  return firstExecutable(['/bin/bash', '/usr/bin/bash', 'bash'])
+}
+
+function goPath() {
+  return firstExecutable([
+    '/usr/local/go/bin/go',
+    '/usr/bin/go',
+    join(os.homedir(), 'go', 'bin', 'go'),
+    'go',
+  ])
+}
+
+function redisServerPath() {
+  return firstExecutable(['/usr/bin/redis-server', '/usr/local/bin/redis-server', 'redis-server'])
+}
+
+function fuserPath() {
+  return firstExecutable(['/usr/bin/fuser', '/bin/fuser', 'fuser'])
+}
+
+function windowIconPath() {
+  return join(__dirname, '..', 'build', 'icons', '512x512.png')
+}
 
 function positiveInt(value, fallback, max) {
   const n = Number(value)
@@ -266,7 +315,7 @@ async function killBenchmarkPorts() {
 
   if (process.platform === 'linux') {
     try {
-      await runCommand('fuser', ['-k', '6390/tcp', '6382/tcp', '6383/tcp'])
+      await runCommand(fuserPath(), ['-k', '6390/tcp', '6382/tcp', '6383/tcp'], { env: runtimeEnv() })
     } catch {
       // fuser exits non-zero when no process owns a port; that is fine.
     }
@@ -280,7 +329,7 @@ async function buildSnugBinary() {
   const binDir = join(app.getPath('userData'), 'bin')
   mkdirSync(binDir, { recursive: true })
   const binary = join(binDir, process.platform === 'win32' ? 'snugkv.exe' : 'snugkv')
-  await runCommand('go', ['build', '-o', binary, './cmd/snugkv'], { cwd: snugRepo(), env: process.env })
+  await runCommand(goPath(), ['build', '-o', binary, './cmd/snugkv'], { cwd: snugRepo(), env: runtimeEnv() })
   return binary
 }
 
@@ -296,7 +345,7 @@ async function startManagedServer(kind) {
   let cwd = snugRepo()
 
   if (kind === 'redis') {
-    command = 'redis-server'
+    command = redisServerPath()
     args = [
       '--bind', '127.0.0.1',
       '--port', String(def.port),
@@ -321,7 +370,7 @@ async function startManagedServer(kind) {
 
   const child = spawn(command, args, {
     cwd,
-    env: process.env,
+    env: runtimeEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
@@ -393,6 +442,11 @@ ipcMain.handle('bench:environment', () => ({
   snugkvRepo: snugRepo(),
   script: scriptPath(),
   scriptFound: existsSync(scriptPath()),
+  bash: bashPath(),
+  go: goPath(),
+  redisServer: redisServerPath(),
+  fuser: fuserPath(),
+  path: runtimeEnv().PATH,
 }))
 
 ipcMain.handle('bench:start', async (_event, rawConfig) => {
@@ -433,9 +487,9 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     startedAt: new Date().toISOString(),
   }
 
-  const child = spawn('bash', args, {
+  const child = spawn(bashPath(), args, {
     cwd: snugRepo(),
-    env: process.env,
+    env: runtimeEnv(),
   })
   activeChild = child
 
@@ -509,7 +563,8 @@ function createWindow() {
     minWidth: 1050,
     minHeight: 700,
     backgroundColor: '#090c10',
-    title: 'SnugKV Benchmark Lab',
+    title: 'Skv Benchmark Lab',
+    icon: windowIconPath(),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,
