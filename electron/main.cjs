@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const { spawn } = require('node:child_process')
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs')
+const { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } = require('node:fs')
 const { randomUUID } = require('node:crypto')
 const { join, resolve } = require('node:path')
 const net = require('node:net')
@@ -60,6 +60,143 @@ function sanitize(body = {}) {
 function emit(job) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('bench:update', job)
+  }
+}
+
+function historyPath() {
+  return join(app.getPath('userData'), 'best-results.json')
+}
+
+function normalizeServerLabel(label) {
+  const value = String(label || '').toLowerCase().replace(/_/g, '-')
+  if (value === 'redis') return 'redis'
+  if (value === 'snug-raw') return 'snug-raw'
+  if (value === 'snug-opt' || value === 'snug-mod') return 'snug-opt'
+  return null
+}
+
+function emptyBest() {
+  return {
+    redis: null,
+    'snug-raw': null,
+    'snug-opt': null,
+  }
+}
+
+function loadSavedHistory() {
+  try {
+    if (!existsSync(historyPath())) return {}
+    return JSON.parse(readFileSync(historyPath(), 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function saveHistory(history) {
+  writeFileSync(historyPath(), JSON.stringify(history, null, 2) + '\n')
+}
+
+function mergeBest(current, load, get, source) {
+  if (!load || !get) return current
+  const candidate = current || {
+    bestSet: 0,
+    bestGet: 0,
+    lowestBytesPerKey: Number.POSITIVE_INFINITY,
+    runs: 0,
+    lastUpdated: null,
+    source: null,
+  }
+
+  candidate.bestSet = Math.max(candidate.bestSet || 0, Number(load.ops_per_second) || 0)
+  candidate.bestGet = Math.max(candidate.bestGet || 0, Number(get.ops_per_second) || 0)
+  const bpk = Number(load.bytes_per_key_delta)
+  if (Number.isFinite(bpk) && bpk > 0) {
+    candidate.lowestBytesPerKey = Math.min(
+      Number.isFinite(candidate.lowestBytesPerKey) ? candidate.lowestBytesPerKey : Number.POSITIVE_INFINITY,
+      bpk,
+    )
+  }
+  candidate.runs = (candidate.runs || 0) + 1
+  candidate.lastUpdated = new Date().toISOString()
+  candidate.source = source
+  return candidate
+}
+
+function scanCliHistory(profile) {
+  const best = emptyBest()
+  const root = join(snugRepo(), 'benchmark-results')
+  if (!existsSync(root)) return best
+
+  let dirs = []
+  try {
+    dirs = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory())
+  } catch {
+    return best
+  }
+
+  for (const entry of dirs) {
+    const dir = join(root, entry.name)
+    const loadPath = join(dir, 'load.json')
+    const getPath = join(dir, 'get.json')
+    if (!existsSync(loadPath) || !existsSync(getPath)) continue
+
+    try {
+      const load = JSON.parse(readFileSync(loadPath, 'utf8'))
+      const get = JSON.parse(readFileSync(getPath, 'utf8'))
+      if (load.value_shape !== profile || get.value_shape !== profile) continue
+      const key = normalizeServerLabel(load.server)
+      if (!key) continue
+      best[key] = mergeBest(best[key], load, get, 'cli')
+    } catch {
+      // Ignore incomplete or manually edited benchmark directories.
+    }
+  }
+
+  return best
+}
+
+function bestResultsForProfile(profile) {
+  const result = scanCliHistory(profile)
+  const saved = loadSavedHistory()
+  const profileSaved = saved[profile] || {}
+
+  for (const key of ['redis', 'snug-raw', 'snug-opt']) {
+    const record = profileSaved[key]
+    if (!record) continue
+    const current = result[key]
+    if (!current) {
+      result[key] = record
+      continue
+    }
+    current.bestSet = Math.max(current.bestSet || 0, record.bestSet || 0)
+    current.bestGet = Math.max(current.bestGet || 0, record.bestGet || 0)
+    const values = [current.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
+    current.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
+    current.runs = Math.max(current.runs || 0, record.runs || 0)
+    if (record.lastUpdated && (!current.lastUpdated || record.lastUpdated > current.lastUpdated)) {
+      current.lastUpdated = record.lastUpdated
+      current.source = record.source
+    }
+  }
+
+  return result
+}
+
+function recordCompletedResult(load, get) {
+  const profile = load?.value_shape
+  const key = normalizeServerLabel(load?.server)
+  if (!profile || !key) return
+
+  const history = loadSavedHistory()
+  if (!history[profile]) history[profile] = {}
+  history[profile][key] = mergeBest(history[profile][key], load, get, 'electron')
+  saveHistory(history)
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history:update', {
+      profile,
+      best: bestResultsForProfile(profile),
+    })
   }
 }
 
@@ -232,6 +369,11 @@ ipcMain.handle('server:status', () => {
   }
 })
 
+ipcMain.handle('history:get', (_event, profile) => {
+  if (!profiles.has(String(profile))) return emptyBest()
+  return bestResultsForProfile(String(profile))
+})
+
 ipcMain.handle('bench:environment', () => ({
   snugkvRepo: snugRepo(),
   script: scriptPath(),
@@ -315,6 +457,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
       job.results = { load, get }
       job.status = 'done'
+      recordCompletedResult(load, get)
     } catch (error) {
       job.status = 'failed'
       job.error = error instanceof Error ? error.message : String(error)
