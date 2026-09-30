@@ -96,6 +96,7 @@ export type ValidationSuiteId =
   | 'go-vet'
   | 'resp-fuzz'
   | 'redis82-differential'
+  | 'cli-command-matrix'
   | 'durability'
   | 'cluster-recovery'
   | 'cluster-corrupt-replica'
@@ -108,7 +109,7 @@ export type ValidationSuite = {
   id: ValidationSuiteId
   label: string
   description: string
-  category: 'release' | 'soak'
+  category: 'release' | 'cli' | 'soak'
   destructive?: boolean
   configurable?: boolean
   defaultDurationSeconds?: number
