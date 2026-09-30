@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails } from './types'
 
 export {}
 
@@ -21,6 +21,12 @@ declare global {
       startValidation(suiteId: ValidationSuiteId, options: ValidationOptions): Promise<ValidationJob>
       cancelValidation(): Promise<boolean>
       onValidationUpdate(callback: (job: ValidationJob) => void): () => void
+      dbListKeys(options: { pattern: string; count: number }): Promise<DbListResult>
+      dbGetKey(options: { key: string }): Promise<DbKeyDetails>
+      dbSetString(options: { key: string; value: string }): Promise<{ ok: boolean; command: string }>
+      dbSetTtl(options: { key: string; seconds: number | null }): Promise<{ ok: boolean; command: string }>
+      dbDeleteKey(options: { key: string }): Promise<{ ok: boolean; command: string }>
+      dbCreateExample(options: { key: string; kind: 'string' | 'hash' | 'list' | 'set' | 'zset' | 'json' }): Promise<{ ok: boolean; command: string }>
     }
   }
 }
