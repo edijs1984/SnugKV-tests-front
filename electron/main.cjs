@@ -13,7 +13,97 @@ const profiles = new Set([
 
 let mainWindow
 let activeChild = null
+let activeValidation = null
 let activeServer = null
+
+
+const validationSuites = [
+  {
+    id: 'full-release',
+    label: 'Full Release Validation',
+    description: 'Full Go tests, race detector, vet, RESP fuzz, Redis 8.2 differential, durability and cluster recovery.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'go-test',
+    label: 'Go Test',
+    description: 'Run the complete Go test suite once.',
+    category: 'release',
+  },
+  {
+    id: 'go-race',
+    label: 'Race Detector',
+    description: 'Run the complete Go test suite with the race detector.',
+    category: 'release',
+  },
+  {
+    id: 'go-vet',
+    label: 'Go Vet',
+    description: 'Static analysis across all Go packages.',
+    category: 'release',
+  },
+  {
+    id: 'resp-fuzz',
+    label: 'RESP Fuzz',
+    description: 'Fuzz the RESP command decoder for 60 seconds.',
+    category: 'release',
+  },
+  {
+    id: 'redis82-differential',
+    label: 'Redis 8.2 Differential',
+    description: 'Cross-restore, Function RDB, MIGRATE and RESP3 client compatibility against Redis 8.2.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'durability',
+    label: 'Durability Matrix',
+    description: 'AOF, snapshots, rewrite, restart, replication persistence and durability fuzz gates.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cluster-recovery',
+    label: 'Cluster Recovery Matrix',
+    description: 'Run all retained cluster restart, partition, failover, migration and corruption recovery cases.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cluster-corrupt-replica',
+    label: 'Corrupt Replica Recovery',
+    description: 'Corrupt replica AOF, require fail-closed behavior, rebuild from primary and verify restart.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cluster-persistence-failure',
+    label: 'Persistence Failure Recovery',
+    description: 'Force AOF rewrite failure, verify live durability, recover rewrite and hard-restart.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'distributed-soak',
+    label: 'Distributed Chaos Soak',
+    description: 'Repeated rebalance, restart, failover, recovery, partition, persistence and corruption chaos cases.',
+    category: 'soak',
+    destructive: true,
+    configurable: true,
+    defaultDurationSeconds: 600,
+  },
+  {
+    id: 'mixed-soak',
+    label: 'Mixed Workload Soak',
+    description: 'Long-running in-process correctness, TTL churn, optimizer and memory-growth workload.',
+    category: 'soak',
+    configurable: true,
+    defaultDurationSeconds: 600,
+  },
+]
+
+const validationSuiteIds = new Set(validationSuites.map(suite => suite.id))
 
 const serverDefs = {
   redis: {
@@ -156,6 +246,83 @@ function sanitize(body = {}) {
     seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
     optimizerMode: body.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated',
   }
+}
+
+
+function sanitizeValidationOptions(body = {}) {
+  return {
+    durationSeconds: positiveInt(body.durationSeconds, 600, 7 * 24 * 60 * 60),
+    caseTimeoutSeconds: positiveInt(body.caseTimeoutSeconds, 480, 3600),
+    keys: positiveInt(body.keys, 100000, 100000000),
+    workers: positiveInt(body.workers, 4, 256),
+    valueBytes: positiveInt(body.valueBytes, 512, 1024 * 1024),
+    seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
+  }
+}
+
+function emitValidation(job) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('validation:update', job)
+  }
+}
+
+function validationCommand(suiteId, options) {
+  switch (suiteId) {
+    case 'go-test':
+      return 'go test ./... -count=1'
+    case 'go-race':
+      return 'go test -race ./... -count=1'
+    case 'go-vet':
+      return 'go vet ./...'
+    case 'resp-fuzz':
+      return "go test ./internal/resp -run=^$ -fuzz=FuzzReadCommand -fuzztime=60s"
+    case 'redis82-differential':
+      return 'bash scripts/release/run-redis82-differential-gates.sh'
+    case 'durability':
+      return 'bash scripts/release/run-durability-gates.sh'
+    case 'cluster-recovery':
+      return 'bash scripts/cluster-recovery-matrix.sh'
+    case 'cluster-corrupt-replica':
+      return 'bash scripts/cluster-chaos-corrupt-replica.sh'
+    case 'cluster-persistence-failure':
+      return 'bash scripts/cluster-chaos-persistence-failure.sh'
+    case 'distributed-soak':
+      return 'bash scripts/cluster-distributed-soak.sh'
+    case 'mixed-soak':
+      return [
+        'go run -buildvcs=false ./cmd/snugsoak',
+        `-duration ${options.durationSeconds}s`,
+        `-keys ${options.keys}`,
+        `-workers ${options.workers}`,
+        `-bytes ${options.valueBytes}`,
+        `-seed ${options.seed}`,
+      ].join(' ')
+    case 'full-release':
+      return [
+        'go test ./... -count=1',
+        'go test -race ./... -count=1',
+        'go vet ./...',
+        "go test ./internal/resp -run=^$ -fuzz=FuzzReadCommand -fuzztime=60s",
+        'bash scripts/release/run-redis82-differential-gates.sh',
+        'bash scripts/release/run-durability-gates.sh',
+        'bash scripts/cluster-recovery-matrix.sh',
+      ].join(' && ')
+    default:
+      throw new Error(`Unknown validation suite: ${suiteId}`)
+  }
+}
+
+function stopProcessTree(child) {
+  if (!child || child.killed) return
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGTERM')
+      return
+    } catch {
+      // Fall through to the direct child when the process group is already gone.
+    }
+  }
+  child.kill('SIGTERM')
 }
 
 function emit(job) {
@@ -542,6 +709,92 @@ ipcMain.handle('history:reset', (_event, profile) => {
   return best
 })
 
+
+ipcMain.handle('validation:suites', () => validationSuites)
+
+ipcMain.handle('validation:start', async (_event, request = {}) => {
+  if (activeValidation) throw new Error('A validation suite is already running')
+  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
+
+  const suiteId = String(request.suiteId || '')
+  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
+
+  const suite = validationSuites.find(item => item.id === suiteId)
+  const options = sanitizeValidationOptions(request.options)
+
+  // Release/chaos suites own their local ports. Stop any server managed by the
+  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
+  if (activeServer) await killBenchmarkPorts()
+
+  const command = validationCommand(suiteId, options)
+  const id = randomUUID()
+  const job = {
+    id,
+    suiteId,
+    suiteLabel: suite.label,
+    status: 'running',
+    command,
+    log: '',
+    startedAt: new Date().toISOString(),
+    options,
+  }
+
+  const env = {
+    ...runtimeEnv(),
+    SNUGKV_GO_BIN: goPath(),
+  }
+  if (suiteId === 'distributed-soak') {
+    env.DURATION_SECONDS = String(options.durationSeconds)
+    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
+    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
+    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
+  }
+
+  const child = spawn(bashPath(), ['-lc', command], {
+    cwd: snugRepo(),
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  activeValidation = child
+
+  const append = chunk => {
+    job.log += chunk.toString()
+    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
+    emitValidation(job)
+  }
+  child.stdout?.on('data', append)
+  child.stderr?.on('data', append)
+
+  child.once('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeValidation = null
+    emitValidation(job)
+  })
+
+  child.once('close', code => {
+    job.finishedAt = new Date().toISOString()
+    job.exitCode = Number.isInteger(code) ? code : undefined
+    if (job.status === 'running') {
+      job.status = code === 0 ? 'done' : 'failed'
+      if (code !== 0) job.error = `Validation exited with code ${code}`
+    }
+    activeValidation = null
+    emitValidation(job)
+  })
+
+  emitValidation(job)
+  return job
+})
+
+ipcMain.handle('validation:cancel', () => {
+  if (!activeValidation) return false
+  stopProcessTree(activeValidation)
+  return true
+})
+
 ipcMain.handle('bench:environment', () => ({
   snugkvRepo: snugRepo(),
   script: scriptPath(),
@@ -734,6 +987,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   if (activeChild) activeChild.kill('SIGTERM')
+  if (activeValidation) stopProcessTree(activeValidation)
   if (activeServer?.child) activeServer.child.kill('SIGTERM')
 })
 
