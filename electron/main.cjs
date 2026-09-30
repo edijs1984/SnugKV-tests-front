@@ -14,6 +14,7 @@ const profiles = new Set([
 let mainWindow
 let activeChild = null
 let activeValidation = null
+let activeValidationCancelled = false
 let activeServer = null
 
 
@@ -568,6 +569,7 @@ async function buildSnugBinary() {
 
 async function startManagedServer(request) {
   if (activeChild) throw new Error('Cannot switch database server while a benchmark is running')
+  if (activeValidation) throw new Error('Cannot switch database server while validation is running')
   const kind = typeof request === 'string' ? request : request?.kind
   const optimizerMode = request?.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated'
   const def = serverDefs[kind]
@@ -666,6 +668,7 @@ async function startManagedServer(request) {
 ipcMain.handle('server:start', async (_event, request) => startManagedServer(request))
 ipcMain.handle('server:stop', async () => {
   if (activeChild) throw new Error('Cannot stop database server while a benchmark is running')
+  if (activeValidation) throw new Error('Cannot stop database server while validation is running')
   await killBenchmarkPorts()
   const status = { running: false }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('server:update', status)
@@ -750,6 +753,7 @@ ipcMain.handle('validation:start', async (_event, request = {}) => {
     env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
   }
 
+  activeValidationCancelled = false
   const child = spawn(bashPath(), ['-lc', command], {
     cwd: snugRepo(),
     env,
@@ -778,10 +782,15 @@ ipcMain.handle('validation:start', async (_event, request = {}) => {
     job.finishedAt = new Date().toISOString()
     job.exitCode = Number.isInteger(code) ? code : undefined
     if (job.status === 'running') {
-      job.status = code === 0 ? 'done' : 'failed'
-      if (code !== 0) job.error = `Validation exited with code ${code}`
+      if (activeValidationCancelled) {
+        job.status = 'cancelled'
+      } else {
+        job.status = code === 0 ? 'done' : 'failed'
+        if (code !== 0) job.error = `Validation exited with code ${code}`
+      }
     }
     activeValidation = null
+    activeValidationCancelled = false
     emitValidation(job)
   })
 
@@ -791,6 +800,7 @@ ipcMain.handle('validation:start', async (_event, request = {}) => {
 
 ipcMain.handle('validation:cancel', () => {
   if (!activeValidation) return false
+  activeValidationCancelled = true
   stopProcessTree(activeValidation)
   return true
 })
@@ -809,6 +819,9 @@ ipcMain.handle('bench:environment', () => ({
 ipcMain.handle('bench:start', async (_event, rawConfig) => {
   if (activeChild) {
     throw new Error('A benchmark is already running')
+  }
+  if (activeValidation) {
+    throw new Error('Cannot start a benchmark while validation is running')
   }
 
   const script = scriptPath()
