@@ -150,6 +150,7 @@ export type DbKeyDetails = {
   ttl: number
   length?: number
   encoding?: string
+  memoryBytes?: number
   value: unknown
   command: string
 }
@@ -158,3 +159,28 @@ export type DbListResult = {
   keys: DbKeySummary[]
   command: string
 }
+
+
+export type DbMutation =
+  | { action: 'hash-set'; key: string; field: string; value: string }
+  | { action: 'hash-del'; key: string; field: string }
+  | { action: 'list-push'; key: string; side: 'left' | 'right'; value: string }
+  | { action: 'list-set'; key: string; index: number; value: string }
+  | { action: 'list-del-index'; key: string; index: number }
+  | { action: 'set-add'; key: string; value: string }
+  | { action: 'set-del'; key: string; value: string }
+  | { action: 'zset-set'; key: string; member: string; score: number }
+  | { action: 'zset-del'; key: string; member: string }
+  | { action: 'json-set-root'; key: string; value: string }
+
+export type DbBulkAction =
+  | { action: 'delete'; keys: string[] }
+  | { action: 'expire'; keys: string[]; seconds: number }
+  | { action: 'persist'; keys: string[] }
+
+export type DbCommandAction =
+  | { action: 'get'; key: string }
+  | { action: 'type'; key: string }
+  | { action: 'ttl'; key: string }
+  | { action: 'exists'; key: string }
+  | { action: 'incr'; key: string; amount: number }
