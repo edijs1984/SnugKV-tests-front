@@ -769,7 +769,7 @@ ipcMain.handle('db:list-keys', (_event, request = {}) => {
   const db = requireActiveDbServer()
   const pattern = cleanDbText(request.pattern || '*', 256) || '*'
   const count = positiveInt(request.count, 300, 1000)
-  const scan = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', pattern, '--count', String(count)], {
+  const scan = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', pattern], {
     env: runtimeEnv(),
     encoding: 'utf8',
     timeout: 10000,
@@ -786,7 +786,7 @@ ipcMain.handle('db:list-keys', (_event, request = {}) => {
   })
   return {
     keys,
-    command: ['redis-cli', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', shellDisplayArg(pattern), '--count', String(count)].join(' '),
+    command: ['redis-cli', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', shellDisplayArg(pattern)].join(' '),
   }
 })
 
