@@ -137,3 +137,24 @@ export type ValidationJob = {
   error?: string
   options: ValidationOptions
 }
+
+
+export type DbKeySummary = {
+  key: string
+  type: string
+}
+
+export type DbKeyDetails = {
+  key: string
+  type: string
+  ttl: number
+  length?: number
+  encoding?: string
+  value: unknown
+  command: string
+}
+
+export type DbListResult = {
+  keys: DbKeySummary[]
+  command: string
+}
