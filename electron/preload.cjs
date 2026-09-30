@@ -40,4 +40,7 @@ contextBridge.exposeInMainWorld('snugBench', {
   dbSetTtl: options => ipcRenderer.invoke('db:set-ttl', options),
   dbDeleteKey: options => ipcRenderer.invoke('db:delete-key', options),
   dbCreateExample: options => ipcRenderer.invoke('db:create-example', options),
+  dbMutate: request => ipcRenderer.invoke('db:mutate', request),
+  dbBulk: request => ipcRenderer.invoke('db:bulk', request),
+  dbCommand: request => ipcRenderer.invoke('db:command', request),
 })
