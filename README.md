@@ -173,3 +173,22 @@ The desktop app includes three buttons:
 On Linux, starting one first clears listeners on all three benchmark ports, then starts the selected server and waits until its TCP port is ready. SnugKV is rebuilt from the current checkout before raw/optimized launch, so the desktop benchmark uses current source code.
 
 Redis requires `redis-server` to be installed and available on `PATH`. SnugKV requires Go to be installed.
+
+
+## Database Explorer
+
+The desktop app also includes a **Database** workspace for visually exploring a running local Redis or SnugKV instance.
+
+It is designed for users who do not know Redis commands:
+
+- search/browse keys by pattern
+- see data type, TTL, size and encoding metadata
+- inspect strings, hashes, lists, sets, sorted sets and JSON
+- edit string values visually
+- apply/remove TTL without writing commands
+- delete keys with confirmation
+- create realistic example data for each major data type
+- see the equivalent `redis-cli` command for every operation
+- learn which data type fits a given use case
+
+Start Redis or SnugKV from the **Benchmark** workspace, then switch to **Database**.
