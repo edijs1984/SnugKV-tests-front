@@ -995,6 +995,31 @@ ipcMain.handle('db:command', (_event, request = {}) => {
     const amount = Number(request.amount)
     if (!Number.isSafeInteger(amount)) throw new Error('Increment must be an integer')
     args = amount === 1 ? ['INCR', key] : ['INCRBY', key, String(amount)]
+  } else if (action === 'set') {
+    args = ['SET', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'delete') {
+    args = ['DEL', key]
+  } else if (action === 'expire') {
+    const seconds = positiveInt(request.seconds, 60, 365 * 24 * 60 * 60)
+    args = ['EXPIRE', key, String(seconds)]
+  } else if (action === 'hget') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HGET', key, field]
+  } else if (action === 'hset') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HSET', key, field, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'lpush' || action === 'rpush') {
+    args = [action === 'lpush' ? 'LPUSH' : 'RPUSH', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'sadd') {
+    args = ['SADD', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'zadd') {
+    const member = cleanDbText(request.member, 8 * 1024 * 1024)
+    if (!member) throw new Error('Member is required')
+    const score = Number(request.score)
+    if (!Number.isFinite(score)) throw new Error('Score must be a number')
+    args = ['ZADD', key, String(score), member]
   } else {
     throw new Error('Unsupported command builder action')
   }
