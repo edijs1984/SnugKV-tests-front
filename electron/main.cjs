@@ -236,6 +236,57 @@ function redisServerPath() {
   return firstExecutable([executableFromPath('redis-server'), '/usr/bin/redis-server', '/usr/local/bin/redis-server', 'redis-server'])
 }
 
+function redisCliPath() {
+  return firstExecutable([executableFromPath('redis-cli'), '/usr/bin/redis-cli', '/usr/local/bin/redis-cli', 'redis-cli'])
+}
+
+function requireActiveDbServer() {
+  if (!activeServer?.port) throw new Error('Start a local Redis or SnugKV server first')
+  return { host: '127.0.0.1', port: activeServer.port }
+}
+
+function cleanDbText(value, max = 4096) {
+  return String(value ?? '').slice(0, max)
+}
+
+function shellDisplayArg(value) {
+  const text = String(value)
+  if (/^[a-zA-Z0-9_:.*/@+-]+$/.test(text)) return text
+  return "'" + text.replace(/'/g, "'\\''") + "'"
+}
+
+function dbCommandDisplay(args) {
+  const db = requireActiveDbServer()
+  return ['redis-cli', '-h', db.host, '-p', String(db.port), ...args].map(shellDisplayArg).join(' ')
+}
+
+function runDbCli(args, options = {}) {
+  const db = requireActiveDbServer()
+  const result = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port), ...args.map(String)], {
+    env: runtimeEnv(),
+    encoding: 'utf8',
+    timeout: options.timeout ?? 8000,
+    maxBuffer: 8 * 1024 * 1024,
+  })
+  if (result.error) throw result.error
+  const stdout = String(result.stdout || '').replace(/\r/g, '').replace(/\n$/, '')
+  const stderr = String(result.stderr || '').trim()
+  if (result.status !== 0) throw new Error(stderr || stdout || `redis-cli exited with code ${result.status}`)
+  if (stdout.startsWith('ERR ')) throw new Error(stdout)
+  return stdout
+}
+
+function dbLines(output) {
+  if (!output) return []
+  return String(output).split('\n')
+}
+
+function dbPairs(lines) {
+  const result = []
+  for (let i = 0; i < lines.length; i += 2) result.push({ field: lines[i], value: lines[i + 1] ?? '' })
+  return result
+}
+
 function fuserPath() {
   return firstExecutable([executableFromPath('fuser'), '/usr/bin/fuser', '/bin/fuser', 'fuser'])
 }
@@ -711,6 +762,1097 @@ ipcMain.handle('server:status', () => {
     label: activeServer.label,
     optimizerMode: activeServer.optimizerMode,
   }
+})
+
+
+ipcMain.handle('db:list-keys', (_event, request = {}) => {
+  const db = requireActiveDbServer()
+  const pattern = cleanDbText(request.pattern || '*', 256) || '*'
+  const count = positiveInt(request.count, 300, 1000)
+  const scan = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', pattern, '--count', String(count)], {
+    env: runtimeEnv(),
+    encoding: 'utf8',
+    timeout: 10000,
+    maxBuffer: 8 * 1024 * 1024,
+  })
+  if (scan.error) throw scan.error
+  if (scan.status !== 0) throw new Error(String(scan.stderr || scan.stdout || 'SCAN failed').trim())
+
+  const names = dbLines(String(scan.stdout || '').replace(/\r/g, '').trim()).filter(Boolean).slice(0, count)
+  const keys = names.map(key => {
+    let type = 'unknown'
+    try { type = runDbCli(['TYPE', key]) || 'unknown' } catch {}
+    return { key, type }
+  })
+  return {
+    keys,
+    command: ['redis-cli', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', shellDisplayArg(pattern), '--count', String(count)].join(' '),
+  }
+})
+
+ipcMain.handle('db:get-key', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+
+  const type = runDbCli(['TYPE', key])
+  if (!type || type === 'none') throw new Error('Key no longer exists')
+  const ttl = Number(runDbCli(['TTL', key]))
+  let value
+  let length
+  let command = dbCommandDisplay(['TYPE', key])
+
+  if (type === 'string') {
+    value = runDbCli(['GET', key])
+    length = Number(runDbCli(['STRLEN', key]))
+    command = dbCommandDisplay(['GET', key])
+  } else if (type === 'hash') {
+    const lines = dbLines(runDbCli(['HGETALL', key]))
+    value = dbPairs(lines)
+    length = Number(runDbCli(['HLEN', key]))
+    command = dbCommandDisplay(['HGETALL', key])
+  } else if (type === 'list') {
+    value = dbLines(runDbCli(['LRANGE', key, '0', '-1']))
+    length = Number(runDbCli(['LLEN', key]))
+    command = dbCommandDisplay(['LRANGE', key, '0', '-1'])
+  } else if (type === 'set') {
+    value = dbLines(runDbCli(['SMEMBERS', key]))
+    length = Number(runDbCli(['SCARD', key]))
+    command = dbCommandDisplay(['SMEMBERS', key])
+  } else if (type === 'zset') {
+    const lines = dbLines(runDbCli(['ZRANGE', key, '0', '-1', 'WITHSCORES']))
+    value = []
+    for (let i = 0; i < lines.length; i += 2) value.push({ member: lines[i], score: lines[i + 1] ?? '' })
+    length = Number(runDbCli(['ZCARD', key]))
+    command = dbCommandDisplay(['ZRANGE', key, '0', '-1', 'WITHSCORES'])
+  } else if (type.toLowerCase().includes('json') || type === 'ReJSON-RL') {
+    const raw = runDbCli(['JSON.GET', key, '
+  if (!profiles.has(String(profile))) return emptyBest()
+  return bestResultsForProfile(String(profile))
+})
+
+ipcMain.handle('history:reset', (_event, profile) => {
+  const normalized = String(profile)
+  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
+
+  const now = new Date().toISOString()
+  const resets = loadHistoryResets()
+  resets[normalized] = now
+  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
+
+  const history = loadSavedHistory()
+  if (history[normalized]) {
+    delete history[normalized]
+    saveHistory(history)
+  }
+
+  const best = emptyBest()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history:update', { profile: normalized, best })
+  }
+  return best
+})
+
+
+ipcMain.handle('validation:suites', () => validationSuites)
+
+ipcMain.handle('validation:start', async (_event, request = {}) => {
+  if (activeValidation) throw new Error('A validation suite is already running')
+  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
+
+  const suiteId = String(request.suiteId || '')
+  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
+
+  const suite = validationSuites.find(item => item.id === suiteId)
+  const options = sanitizeValidationOptions(request.options)
+
+  // Release/chaos suites own their local ports. Stop any server managed by the
+  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
+  if (activeServer) await killBenchmarkPorts()
+
+  const command = validationCommand(suiteId, options)
+  const id = randomUUID()
+  const job = {
+    id,
+    suiteId,
+    suiteLabel: suite.label,
+    status: 'running',
+    command,
+    log: '',
+    startedAt: new Date().toISOString(),
+    options,
+  }
+
+  const env = {
+    ...runtimeEnv(),
+    SNUGKV_GO_BIN: goPath(),
+  }
+  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
+    env.DURATION_SECONDS = String(options.durationSeconds)
+    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
+    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
+    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
+  }
+
+  activeValidationCancelled = false
+  const child = spawn(bashPath(), ['-lc', command], {
+    cwd: snugRepo(),
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  activeValidation = child
+
+  const append = chunk => {
+    job.log += chunk.toString()
+    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
+    emitValidation(job)
+  }
+  child.stdout?.on('data', append)
+  child.stderr?.on('data', append)
+
+  child.once('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeValidation = null
+    emitValidation(job)
+  })
+
+  child.once('close', code => {
+    job.finishedAt = new Date().toISOString()
+    job.exitCode = Number.isInteger(code) ? code : undefined
+    if (job.status === 'running') {
+      if (activeValidationCancelled) {
+        job.status = 'cancelled'
+      } else {
+        job.status = code === 0 ? 'done' : 'failed'
+        if (code !== 0) job.error = `Validation exited with code ${code}`
+      }
+    }
+    activeValidation = null
+    activeValidationCancelled = false
+    emitValidation(job)
+  })
+
+  emitValidation(job)
+  return job
+})
+
+ipcMain.handle('validation:cancel', () => {
+  if (!activeValidation) return false
+  activeValidationCancelled = true
+  stopProcessTree(activeValidation)
+  return true
+})
+
+ipcMain.handle('bench:environment', () => ({
+  snugkvRepo: snugRepo(),
+  script: scriptPath(),
+  scriptFound: existsSync(scriptPath()),
+  bash: bashPath(),
+  go: goPath(),
+  redisServer: redisServerPath(),
+  fuser: fuserPath(),
+  path: runtimeEnv().PATH,
+}))
+
+ipcMain.handle('bench:start', async (_event, rawConfig) => {
+  if (activeChild) {
+    throw new Error('A benchmark is already running')
+  }
+  if (activeValidation) {
+    throw new Error('Cannot start a benchmark while validation is running')
+  }
+
+  const script = scriptPath()
+  if (!existsSync(script)) {
+    throw new Error(`Benchmark script not found at ${script}. Set SNUGKV_REPO to your SnugKV checkout.`)
+  }
+
+  const c = sanitize(rawConfig)
+  const id = randomUUID()
+  const out = join(app.getPath('userData'), 'runs', id)
+  mkdirSync(out, { recursive: true })
+
+  const args = [
+    script,
+    c.profile,
+    '-p', String(c.port),
+    '-h', c.host,
+    '-s', c.server,
+    '-k', String(c.keys),
+    '-g', String(c.getOps),
+    '-w', String(c.workers),
+    '-P', String(c.pipeline),
+    '--settle-ms', String(c.settleMs),
+    '--seed', String(c.seed),
+    '-o', out,
+  ]
+
+  const job = {
+    id,
+    status: 'running',
+    config: c,
+    command: ['bash', ...args].join(' '),
+    log: '',
+    startedAt: new Date().toISOString(),
+  }
+
+  const child = spawn(bashPath(), args, {
+    cwd: snugRepo(),
+    env: {
+      ...runtimeEnv(),
+      SNUGKV_GO_BIN: goPath(),
+    },
+  })
+  activeChild = child
+
+  let progressBuffer = ''
+  const append = chunk => {
+    const text = chunk.toString()
+    job.log += text
+    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+    emit(job)
+  }
+
+  const appendProgress = chunk => {
+    const text = chunk.toString()
+    progressBuffer += text
+    const lines = progressBuffer.split('\n')
+    progressBuffer = lines.pop() || ''
+
+    const visible = []
+    for (const line of lines) {
+      if (!line.startsWith('BENCH_PROGRESS ')) {
+        visible.push(line)
+        continue
+      }
+      try {
+        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
+        if (!job.optimization?.start_used_memory) {
+          progress.start_used_memory = progress.used_memory
+        } else {
+          progress.start_used_memory = job.optimization.start_used_memory
+        }
+        job.optimization = progress
+      } catch {
+        visible.push(line)
+      }
+    }
+
+    if (visible.length) {
+      job.log += visible.join('\n') + '\n'
+      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+    }
+
+    emit(job)
+  }
+
+  child.stdout.on('data', append)
+  child.stderr.on('data', appendProgress)
+
+  child.on('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeChild = null
+    emit(job)
+  })
+
+  child.on('close', code => {
+    job.finishedAt = new Date().toISOString()
+    activeChild = null
+
+    if (code !== 0) {
+      job.status = 'failed'
+      job.error = `Benchmark exited with code ${code}`
+      emit(job)
+      return
+    }
+
+    try {
+      const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
+      const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
+      job.results = { load, get }
+      job.status = 'done'
+      recordCompletedResult(load, get)
+    } catch (error) {
+      job.status = 'failed'
+      job.error = error instanceof Error ? error.message : String(error)
+    }
+
+    emit(job)
+  })
+
+  return job
+})
+
+ipcMain.handle('bench:cancel', () => {
+  if (!activeChild) return false
+  activeChild.kill('SIGTERM')
+  return true
+})
+
+ipcMain.handle('bench:save', async (_event, payload) => {
+  const suggested = payload?.filename || 'snugkv-benchmark.json'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save benchmark result',
+    defaultPath: suggested,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+  writeFileSync(result.filePath, JSON.stringify(payload.data, null, 2) + '\n')
+  return { saved: true, path: result.filePath }
+})
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1050,
+    minHeight: 700,
+    backgroundColor: '#090c10',
+    title: 'Skv Benchmark Lab',
+    icon: windowIconPath(),
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  mainWindow.removeMenu()
+
+  if (app.isPackaged) {
+    mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
+  } else {
+    mainWindow.loadURL(process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173')
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('before-quit', () => {
+  if (activeChild) activeChild.kill('SIGTERM')
+  if (activeValidation) stopProcessTree(activeValidation)
+  if (activeServer?.child) activeServer.child.kill('SIGTERM')
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+])
+    try { value = JSON.parse(raw) } catch { value = raw }
+    command = dbCommandDisplay(['JSON.GET', key, '
+  if (!profiles.has(String(profile))) return emptyBest()
+  return bestResultsForProfile(String(profile))
+})
+
+ipcMain.handle('history:reset', (_event, profile) => {
+  const normalized = String(profile)
+  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
+
+  const now = new Date().toISOString()
+  const resets = loadHistoryResets()
+  resets[normalized] = now
+  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
+
+  const history = loadSavedHistory()
+  if (history[normalized]) {
+    delete history[normalized]
+    saveHistory(history)
+  }
+
+  const best = emptyBest()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history:update', { profile: normalized, best })
+  }
+  return best
+})
+
+
+ipcMain.handle('validation:suites', () => validationSuites)
+
+ipcMain.handle('validation:start', async (_event, request = {}) => {
+  if (activeValidation) throw new Error('A validation suite is already running')
+  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
+
+  const suiteId = String(request.suiteId || '')
+  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
+
+  const suite = validationSuites.find(item => item.id === suiteId)
+  const options = sanitizeValidationOptions(request.options)
+
+  // Release/chaos suites own their local ports. Stop any server managed by the
+  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
+  if (activeServer) await killBenchmarkPorts()
+
+  const command = validationCommand(suiteId, options)
+  const id = randomUUID()
+  const job = {
+    id,
+    suiteId,
+    suiteLabel: suite.label,
+    status: 'running',
+    command,
+    log: '',
+    startedAt: new Date().toISOString(),
+    options,
+  }
+
+  const env = {
+    ...runtimeEnv(),
+    SNUGKV_GO_BIN: goPath(),
+  }
+  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
+    env.DURATION_SECONDS = String(options.durationSeconds)
+    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
+    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
+    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
+  }
+
+  activeValidationCancelled = false
+  const child = spawn(bashPath(), ['-lc', command], {
+    cwd: snugRepo(),
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  activeValidation = child
+
+  const append = chunk => {
+    job.log += chunk.toString()
+    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
+    emitValidation(job)
+  }
+  child.stdout?.on('data', append)
+  child.stderr?.on('data', append)
+
+  child.once('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeValidation = null
+    emitValidation(job)
+  })
+
+  child.once('close', code => {
+    job.finishedAt = new Date().toISOString()
+    job.exitCode = Number.isInteger(code) ? code : undefined
+    if (job.status === 'running') {
+      if (activeValidationCancelled) {
+        job.status = 'cancelled'
+      } else {
+        job.status = code === 0 ? 'done' : 'failed'
+        if (code !== 0) job.error = `Validation exited with code ${code}`
+      }
+    }
+    activeValidation = null
+    activeValidationCancelled = false
+    emitValidation(job)
+  })
+
+  emitValidation(job)
+  return job
+})
+
+ipcMain.handle('validation:cancel', () => {
+  if (!activeValidation) return false
+  activeValidationCancelled = true
+  stopProcessTree(activeValidation)
+  return true
+})
+
+ipcMain.handle('bench:environment', () => ({
+  snugkvRepo: snugRepo(),
+  script: scriptPath(),
+  scriptFound: existsSync(scriptPath()),
+  bash: bashPath(),
+  go: goPath(),
+  redisServer: redisServerPath(),
+  fuser: fuserPath(),
+  path: runtimeEnv().PATH,
+}))
+
+ipcMain.handle('bench:start', async (_event, rawConfig) => {
+  if (activeChild) {
+    throw new Error('A benchmark is already running')
+  }
+  if (activeValidation) {
+    throw new Error('Cannot start a benchmark while validation is running')
+  }
+
+  const script = scriptPath()
+  if (!existsSync(script)) {
+    throw new Error(`Benchmark script not found at ${script}. Set SNUGKV_REPO to your SnugKV checkout.`)
+  }
+
+  const c = sanitize(rawConfig)
+  const id = randomUUID()
+  const out = join(app.getPath('userData'), 'runs', id)
+  mkdirSync(out, { recursive: true })
+
+  const args = [
+    script,
+    c.profile,
+    '-p', String(c.port),
+    '-h', c.host,
+    '-s', c.server,
+    '-k', String(c.keys),
+    '-g', String(c.getOps),
+    '-w', String(c.workers),
+    '-P', String(c.pipeline),
+    '--settle-ms', String(c.settleMs),
+    '--seed', String(c.seed),
+    '-o', out,
+  ]
+
+  const job = {
+    id,
+    status: 'running',
+    config: c,
+    command: ['bash', ...args].join(' '),
+    log: '',
+    startedAt: new Date().toISOString(),
+  }
+
+  const child = spawn(bashPath(), args, {
+    cwd: snugRepo(),
+    env: {
+      ...runtimeEnv(),
+      SNUGKV_GO_BIN: goPath(),
+    },
+  })
+  activeChild = child
+
+  let progressBuffer = ''
+  const append = chunk => {
+    const text = chunk.toString()
+    job.log += text
+    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+    emit(job)
+  }
+
+  const appendProgress = chunk => {
+    const text = chunk.toString()
+    progressBuffer += text
+    const lines = progressBuffer.split('\n')
+    progressBuffer = lines.pop() || ''
+
+    const visible = []
+    for (const line of lines) {
+      if (!line.startsWith('BENCH_PROGRESS ')) {
+        visible.push(line)
+        continue
+      }
+      try {
+        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
+        if (!job.optimization?.start_used_memory) {
+          progress.start_used_memory = progress.used_memory
+        } else {
+          progress.start_used_memory = job.optimization.start_used_memory
+        }
+        job.optimization = progress
+      } catch {
+        visible.push(line)
+      }
+    }
+
+    if (visible.length) {
+      job.log += visible.join('\n') + '\n'
+      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+    }
+
+    emit(job)
+  }
+
+  child.stdout.on('data', append)
+  child.stderr.on('data', appendProgress)
+
+  child.on('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeChild = null
+    emit(job)
+  })
+
+  child.on('close', code => {
+    job.finishedAt = new Date().toISOString()
+    activeChild = null
+
+    if (code !== 0) {
+      job.status = 'failed'
+      job.error = `Benchmark exited with code ${code}`
+      emit(job)
+      return
+    }
+
+    try {
+      const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
+      const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
+      job.results = { load, get }
+      job.status = 'done'
+      recordCompletedResult(load, get)
+    } catch (error) {
+      job.status = 'failed'
+      job.error = error instanceof Error ? error.message : String(error)
+    }
+
+    emit(job)
+  })
+
+  return job
+})
+
+ipcMain.handle('bench:cancel', () => {
+  if (!activeChild) return false
+  activeChild.kill('SIGTERM')
+  return true
+})
+
+ipcMain.handle('bench:save', async (_event, payload) => {
+  const suggested = payload?.filename || 'snugkv-benchmark.json'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save benchmark result',
+    defaultPath: suggested,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+  writeFileSync(result.filePath, JSON.stringify(payload.data, null, 2) + '\n')
+  return { saved: true, path: result.filePath }
+})
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1050,
+    minHeight: 700,
+    backgroundColor: '#090c10',
+    title: 'Skv Benchmark Lab',
+    icon: windowIconPath(),
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  mainWindow.removeMenu()
+
+  if (app.isPackaged) {
+    mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
+  } else {
+    mainWindow.loadURL(process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173')
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('before-quit', () => {
+  if (activeChild) activeChild.kill('SIGTERM')
+  if (activeValidation) stopProcessTree(activeValidation)
+  if (activeServer?.child) activeServer.child.kill('SIGTERM')
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+])
+  } else {
+    try {
+      value = runDbCli(['GET', key])
+      command = dbCommandDisplay(['GET', key])
+    } catch {
+      value = `Preview is not implemented for type: ${type}`
+    }
+  }
+
+  let encoding
+  try { encoding = runDbCli(['OBJECT', 'ENCODING', key]) || undefined } catch {}
+
+  return { key, type, ttl: Number.isFinite(ttl) ? ttl : -1, length, encoding, value, command }
+})
+
+ipcMain.handle('db:set-string', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  const value = cleanDbText(request.value, 8 * 1024 * 1024)
+  if (!key) throw new Error('Key is required')
+  runDbCli(['SET', key, value])
+  return { ok: true, command: dbCommandDisplay(['SET', key, value]) }
+})
+
+ipcMain.handle('db:set-ttl', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+  if (request.seconds === null || request.seconds === undefined || request.seconds === '') {
+    runDbCli(['PERSIST', key])
+    return { ok: true, command: dbCommandDisplay(['PERSIST', key]) }
+  }
+  const seconds = positiveInt(request.seconds, 60, 365 * 24 * 60 * 60)
+  runDbCli(['EXPIRE', key, String(seconds)])
+  return { ok: true, command: dbCommandDisplay(['EXPIRE', key, String(seconds)]) }
+})
+
+ipcMain.handle('db:delete-key', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+  runDbCli(['DEL', key])
+  return { ok: true, command: dbCommandDisplay(['DEL', key]) }
+})
+
+ipcMain.handle('db:create-example', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  const kind = String(request.kind || '')
+  if (!key) throw new Error('Key is required')
+  if (!['string', 'hash', 'list', 'set', 'zset', 'json'].includes(kind)) throw new Error('Unsupported example type')
+
+  runDbCli(['DEL', key])
+  let args
+  if (kind === 'string') args = ['SET', key, 'Hello from SnugKV']
+  if (kind === 'hash') args = ['HSET', key, 'name', 'Ada', 'role', 'engineer', 'active', 'true']
+  if (kind === 'list') args = ['RPUSH', key, 'queued', 'processing', 'done']
+  if (kind === 'set') args = ['SADD', key, 'redis', 'snugkv', 'database']
+  if (kind === 'zset') args = ['ZADD', key, '1200', 'alice', '950', 'bob', '740', 'carol']
+  if (kind === 'json') args = ['JSON.SET', key, '
+  if (!profiles.has(String(profile))) return emptyBest()
+  return bestResultsForProfile(String(profile))
+})
+
+ipcMain.handle('history:reset', (_event, profile) => {
+  const normalized = String(profile)
+  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
+
+  const now = new Date().toISOString()
+  const resets = loadHistoryResets()
+  resets[normalized] = now
+  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
+
+  const history = loadSavedHistory()
+  if (history[normalized]) {
+    delete history[normalized]
+    saveHistory(history)
+  }
+
+  const best = emptyBest()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history:update', { profile: normalized, best })
+  }
+  return best
+})
+
+
+ipcMain.handle('validation:suites', () => validationSuites)
+
+ipcMain.handle('validation:start', async (_event, request = {}) => {
+  if (activeValidation) throw new Error('A validation suite is already running')
+  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
+
+  const suiteId = String(request.suiteId || '')
+  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
+
+  const suite = validationSuites.find(item => item.id === suiteId)
+  const options = sanitizeValidationOptions(request.options)
+
+  // Release/chaos suites own their local ports. Stop any server managed by the
+  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
+  if (activeServer) await killBenchmarkPorts()
+
+  const command = validationCommand(suiteId, options)
+  const id = randomUUID()
+  const job = {
+    id,
+    suiteId,
+    suiteLabel: suite.label,
+    status: 'running',
+    command,
+    log: '',
+    startedAt: new Date().toISOString(),
+    options,
+  }
+
+  const env = {
+    ...runtimeEnv(),
+    SNUGKV_GO_BIN: goPath(),
+  }
+  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
+    env.DURATION_SECONDS = String(options.durationSeconds)
+    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
+    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
+    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
+  }
+
+  activeValidationCancelled = false
+  const child = spawn(bashPath(), ['-lc', command], {
+    cwd: snugRepo(),
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  activeValidation = child
+
+  const append = chunk => {
+    job.log += chunk.toString()
+    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
+    emitValidation(job)
+  }
+  child.stdout?.on('data', append)
+  child.stderr?.on('data', append)
+
+  child.once('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeValidation = null
+    emitValidation(job)
+  })
+
+  child.once('close', code => {
+    job.finishedAt = new Date().toISOString()
+    job.exitCode = Number.isInteger(code) ? code : undefined
+    if (job.status === 'running') {
+      if (activeValidationCancelled) {
+        job.status = 'cancelled'
+      } else {
+        job.status = code === 0 ? 'done' : 'failed'
+        if (code !== 0) job.error = `Validation exited with code ${code}`
+      }
+    }
+    activeValidation = null
+    activeValidationCancelled = false
+    emitValidation(job)
+  })
+
+  emitValidation(job)
+  return job
+})
+
+ipcMain.handle('validation:cancel', () => {
+  if (!activeValidation) return false
+  activeValidationCancelled = true
+  stopProcessTree(activeValidation)
+  return true
+})
+
+ipcMain.handle('bench:environment', () => ({
+  snugkvRepo: snugRepo(),
+  script: scriptPath(),
+  scriptFound: existsSync(scriptPath()),
+  bash: bashPath(),
+  go: goPath(),
+  redisServer: redisServerPath(),
+  fuser: fuserPath(),
+  path: runtimeEnv().PATH,
+}))
+
+ipcMain.handle('bench:start', async (_event, rawConfig) => {
+  if (activeChild) {
+    throw new Error('A benchmark is already running')
+  }
+  if (activeValidation) {
+    throw new Error('Cannot start a benchmark while validation is running')
+  }
+
+  const script = scriptPath()
+  if (!existsSync(script)) {
+    throw new Error(`Benchmark script not found at ${script}. Set SNUGKV_REPO to your SnugKV checkout.`)
+  }
+
+  const c = sanitize(rawConfig)
+  const id = randomUUID()
+  const out = join(app.getPath('userData'), 'runs', id)
+  mkdirSync(out, { recursive: true })
+
+  const args = [
+    script,
+    c.profile,
+    '-p', String(c.port),
+    '-h', c.host,
+    '-s', c.server,
+    '-k', String(c.keys),
+    '-g', String(c.getOps),
+    '-w', String(c.workers),
+    '-P', String(c.pipeline),
+    '--settle-ms', String(c.settleMs),
+    '--seed', String(c.seed),
+    '-o', out,
+  ]
+
+  const job = {
+    id,
+    status: 'running',
+    config: c,
+    command: ['bash', ...args].join(' '),
+    log: '',
+    startedAt: new Date().toISOString(),
+  }
+
+  const child = spawn(bashPath(), args, {
+    cwd: snugRepo(),
+    env: {
+      ...runtimeEnv(),
+      SNUGKV_GO_BIN: goPath(),
+    },
+  })
+  activeChild = child
+
+  let progressBuffer = ''
+  const append = chunk => {
+    const text = chunk.toString()
+    job.log += text
+    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+    emit(job)
+  }
+
+  const appendProgress = chunk => {
+    const text = chunk.toString()
+    progressBuffer += text
+    const lines = progressBuffer.split('\n')
+    progressBuffer = lines.pop() || ''
+
+    const visible = []
+    for (const line of lines) {
+      if (!line.startsWith('BENCH_PROGRESS ')) {
+        visible.push(line)
+        continue
+      }
+      try {
+        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
+        if (!job.optimization?.start_used_memory) {
+          progress.start_used_memory = progress.used_memory
+        } else {
+          progress.start_used_memory = job.optimization.start_used_memory
+        }
+        job.optimization = progress
+      } catch {
+        visible.push(line)
+      }
+    }
+
+    if (visible.length) {
+      job.log += visible.join('\n') + '\n'
+      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
+    }
+
+    emit(job)
+  }
+
+  child.stdout.on('data', append)
+  child.stderr.on('data', appendProgress)
+
+  child.on('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeChild = null
+    emit(job)
+  })
+
+  child.on('close', code => {
+    job.finishedAt = new Date().toISOString()
+    activeChild = null
+
+    if (code !== 0) {
+      job.status = 'failed'
+      job.error = `Benchmark exited with code ${code}`
+      emit(job)
+      return
+    }
+
+    try {
+      const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
+      const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
+      job.results = { load, get }
+      job.status = 'done'
+      recordCompletedResult(load, get)
+    } catch (error) {
+      job.status = 'failed'
+      job.error = error instanceof Error ? error.message : String(error)
+    }
+
+    emit(job)
+  })
+
+  return job
+})
+
+ipcMain.handle('bench:cancel', () => {
+  if (!activeChild) return false
+  activeChild.kill('SIGTERM')
+  return true
+})
+
+ipcMain.handle('bench:save', async (_event, payload) => {
+  const suggested = payload?.filename || 'snugkv-benchmark.json'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save benchmark result',
+    defaultPath: suggested,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+  writeFileSync(result.filePath, JSON.stringify(payload.data, null, 2) + '\n')
+  return { saved: true, path: result.filePath }
+})
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1050,
+    minHeight: 700,
+    backgroundColor: '#090c10',
+    title: 'Skv Benchmark Lab',
+    icon: windowIconPath(),
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  mainWindow.removeMenu()
+
+  if (app.isPackaged) {
+    mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
+  } else {
+    mainWindow.loadURL(process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173')
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('before-quit', () => {
+  if (activeChild) activeChild.kill('SIGTERM')
+  if (activeValidation) stopProcessTree(activeValidation)
+  if (activeServer?.child) activeServer.child.kill('SIGTERM')
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+, JSON.stringify({ name: 'Ada', role: 'engineer', skills: ['Go', 'TypeScript'], active: true })]
+
+  runDbCli(args)
+  return { ok: true, command: dbCommandDisplay(args) }
 })
 
 ipcMain.handle('history:get', (_event, profile) => {
