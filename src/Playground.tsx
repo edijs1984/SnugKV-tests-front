@@ -3,7 +3,7 @@ import type { DbKeyDetails, DbKeySummary, DbMutation, ServerStatus } from './typ
 
 type Props = { serverStatus: ServerStatus }
 type DataKind = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'json'
-type CommandAction = 'get' | 'type' | 'ttl' | 'exists' | 'incr'
+type CommandAction = 'get' | 'type' | 'ttl' | 'exists' | 'incr' | 'set' | 'delete' | 'expire' | 'hget' | 'hset' | 'lpush' | 'rpush' | 'sadd' | 'zadd'
 
 const examples: Array<{ kind: DataKind; label: string; key: string; hint: string }> = [
   { kind: 'string', label: 'String', key: 'demo:greeting', hint: 'Cache value, token, flag or counter.' },
@@ -47,6 +47,9 @@ export default function Playground({ serverStatus }: Props) {
   const [commandAction, setCommandAction] = useState<CommandAction>('type')
   const [commandKey, setCommandKey] = useState('')
   const [commandAmount, setCommandAmount] = useState('1')
+  const [commandValue, setCommandValue] = useState('hello')
+  const [commandField, setCommandField] = useState('name')
+  const [commandScore, setCommandScore] = useState('100')
   const [commandResult, setCommandResult] = useState('')
   const [namespace, setNamespace] = useState('all')
 
@@ -217,9 +220,13 @@ export default function Playground({ serverStatus }: Props) {
     setBusy(true)
     setCommandResult('')
     try {
-      const request = commandAction === 'incr'
-        ? { action: 'incr' as const, key: commandKey.trim(), amount: Number(commandAmount) }
-        : { action: commandAction, key: commandKey.trim() }
+      let request: any = { action: commandAction, key: commandKey.trim() }
+      if (commandAction === 'incr') request.amount = Number(commandAmount)
+      if (commandAction === 'set' || commandAction === 'lpush' || commandAction === 'rpush' || commandAction === 'sadd') request.value = commandValue
+      if (commandAction === 'expire') request.seconds = Number(commandAmount)
+      if (commandAction === 'hget') request.field = commandField
+      if (commandAction === 'hset') { request.field = commandField; request.value = commandValue }
+      if (commandAction === 'zadd') { request.member = commandValue; request.score = Number(commandScore) }
       const result = await window.snugBench.dbCommand(request)
       setLastCommand(result.command)
       setCommandResult(result.result || '(empty response)')
@@ -510,9 +517,21 @@ export default function Playground({ serverStatus }: Props) {
               <option value="exists">Does this key exist?</option>
               <option value="get">Read string value</option>
               <option value="incr">Increase counter</option>
+              <option value="set">Set string value</option>
+              <option value="delete">Delete key</option>
+              <option value="expire">Set expiration</option>
+              <option value="hget">Read hash field</option>
+              <option value="hset">Set hash field</option>
+              <option value="lpush">Push to list (left)</option>
+              <option value="rpush">Push to list (right)</option>
+              <option value="sadd">Add set member</option>
+              <option value="zadd">Add/update sorted-set member</option>
             </select>
             <input placeholder="key name" value={commandKey} onChange={e => setCommandKey(e.target.value)} />
-            {commandAction === 'incr' && <input type="number" value={commandAmount} onChange={e => setCommandAmount(e.target.value)} />}
+            {(commandAction === 'incr' || commandAction === 'expire') && <input type="number" value={commandAmount} onChange={e => setCommandAmount(e.target.value)} placeholder={commandAction === 'expire' ? 'seconds' : 'amount'} />}
+            {(commandAction === 'hget' || commandAction === 'hset') && <input value={commandField} onChange={e => setCommandField(e.target.value)} placeholder="field" />}
+            {(commandAction === 'set' || commandAction === 'hset' || commandAction === 'lpush' || commandAction === 'rpush' || commandAction === 'sadd' || commandAction === 'zadd') && <input value={commandValue} onChange={e => setCommandValue(e.target.value)} placeholder={commandAction === 'zadd' ? 'member' : 'value'} />}
+            {commandAction === 'zadd' && <input type="number" step="any" value={commandScore} onChange={e => setCommandScore(e.target.value)} placeholder="score" />}
             <button onClick={runBuilder} disabled={!connected || busy || !commandKey.trim()}>Run</button>
           </div>
           {commandResult && <div className="db-command-result"><span>Result</span><strong>{commandResult}</strong></div>}
