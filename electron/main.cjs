@@ -86,6 +86,15 @@ const validationSuites = [
     destructive: true,
   },
   {
+    id: 'full-soak',
+    label: 'Full Soak',
+    description: 'Run mixed workload soak followed by the distributed cluster chaos soak for the selected duration.',
+    category: 'soak',
+    destructive: true,
+    configurable: true,
+    defaultDurationSeconds: 600,
+  },
+  {
     id: 'distributed-soak',
     label: 'Distributed Chaos Soak',
     description: 'Repeated rebalance, restart, failover, recovery, partition, persistence and corruption chaos cases.',
@@ -287,6 +296,16 @@ function validationCommand(suiteId, options) {
       return 'bash scripts/cluster-chaos-corrupt-replica.sh'
     case 'cluster-persistence-failure':
       return 'bash scripts/cluster-chaos-persistence-failure.sh'
+    case 'full-soak':
+      return [
+        'go run -buildvcs=false ./cmd/snugsoak',
+        `-duration ${options.durationSeconds}s`,
+        `-keys ${options.keys}`,
+        `-workers ${options.workers}`,
+        `-bytes ${options.valueBytes}`,
+        `-seed ${options.seed}`,
+        '&& bash scripts/cluster-distributed-soak.sh',
+      ].join(' ')
     case 'distributed-soak':
       return 'bash scripts/cluster-distributed-soak.sh'
     case 'mixed-soak':
@@ -746,7 +765,7 @@ ipcMain.handle('validation:start', async (_event, request = {}) => {
     ...runtimeEnv(),
     SNUGKV_GO_BIN: goPath(),
   }
-  if (suiteId === 'distributed-soak') {
+  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
     env.DURATION_SECONDS = String(options.durationSeconds)
     env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
     env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
