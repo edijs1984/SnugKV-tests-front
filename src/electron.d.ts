@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction } from './types'
 
 export {}
 
@@ -27,6 +27,9 @@ declare global {
       dbSetTtl(options: { key: string; seconds: number | null }): Promise<{ ok: boolean; command: string }>
       dbDeleteKey(options: { key: string }): Promise<{ ok: boolean; command: string }>
       dbCreateExample(options: { key: string; kind: 'string' | 'hash' | 'list' | 'set' | 'zset' | 'json' }): Promise<{ ok: boolean; command: string }>
+      dbMutate(request: DbMutation): Promise<{ ok: boolean; command: string }>
+      dbBulk(request: DbBulkAction): Promise<{ ok: boolean; command: string; affected: number }>
+      dbCommand(request: DbCommandAction): Promise<{ ok: boolean; command: string; result: string }>
     }
   }
 }
