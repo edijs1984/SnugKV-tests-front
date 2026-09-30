@@ -87,3 +87,51 @@ export type ProfileBestResults = {
   'snug-raw': BestServerResult | null
   'snug-opt': BestServerResult | null
 }
+
+
+export type ValidationSuiteId =
+  | 'full-release'
+  | 'go-test'
+  | 'go-race'
+  | 'go-vet'
+  | 'resp-fuzz'
+  | 'redis82-differential'
+  | 'durability'
+  | 'cluster-recovery'
+  | 'cluster-corrupt-replica'
+  | 'cluster-persistence-failure'
+  | 'distributed-soak'
+  | 'mixed-soak'
+
+export type ValidationSuite = {
+  id: ValidationSuiteId
+  label: string
+  description: string
+  category: 'release' | 'soak'
+  destructive?: boolean
+  configurable?: boolean
+  defaultDurationSeconds?: number
+}
+
+export type ValidationOptions = {
+  durationSeconds: number
+  caseTimeoutSeconds: number
+  keys: number
+  workers: number
+  valueBytes: number
+  seed: number
+}
+
+export type ValidationJob = {
+  id: string
+  suiteId: ValidationSuiteId
+  suiteLabel: string
+  status: 'running' | 'done' | 'failed' | 'cancelled'
+  command: string
+  log: string
+  startedAt: string
+  finishedAt?: string
+  exitCode?: number
+  error?: string
+  options: ValidationOptions
+}
