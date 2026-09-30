@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId } from './types'
 
 export {}
 
@@ -17,6 +17,10 @@ declare global {
       bestResults(profile: string): Promise<ProfileBestResults>
       resetBestResults(profile: string): Promise<ProfileBestResults>
       onHistoryUpdate(callback: (payload: { profile: string; best: ProfileBestResults }) => void): () => void
+      validationSuites(): Promise<ValidationSuite[]>
+      startValidation(suiteId: ValidationSuiteId, options: ValidationOptions): Promise<ValidationJob>
+      cancelValidation(): Promise<boolean>
+      onValidationUpdate(callback: (job: ValidationJob) => void): () => void
     }
   }
 }
