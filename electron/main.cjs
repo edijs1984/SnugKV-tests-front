@@ -825,653 +825,9 @@ ipcMain.handle('db:get-key', (_event, request = {}) => {
     length = Number(runDbCli(['ZCARD', key]))
     command = dbCommandDisplay(['ZRANGE', key, '0', '-1', 'WITHSCORES'])
   } else if (type.toLowerCase().includes('json') || type === 'ReJSON-RL') {
-    const raw = runDbCli(['JSON.GET', key, '
-  if (!profiles.has(String(profile))) return emptyBest()
-  return bestResultsForProfile(String(profile))
-})
-
-ipcMain.handle('history:reset', (_event, profile) => {
-  const normalized = String(profile)
-  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
-
-  const now = new Date().toISOString()
-  const resets = loadHistoryResets()
-  resets[normalized] = now
-  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
-
-  const history = loadSavedHistory()
-  if (history[normalized]) {
-    delete history[normalized]
-    saveHistory(history)
-  }
-
-  const best = emptyBest()
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('history:update', { profile: normalized, best })
-  }
-  return best
-})
-
-
-ipcMain.handle('validation:suites', () => validationSuites)
-
-ipcMain.handle('validation:start', async (_event, request = {}) => {
-  if (activeValidation) throw new Error('A validation suite is already running')
-  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
-
-  const suiteId = String(request.suiteId || '')
-  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
-
-  const suite = validationSuites.find(item => item.id === suiteId)
-  const options = sanitizeValidationOptions(request.options)
-
-  // Release/chaos suites own their local ports. Stop any server managed by the
-  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
-  if (activeServer) await killBenchmarkPorts()
-
-  const command = validationCommand(suiteId, options)
-  const id = randomUUID()
-  const job = {
-    id,
-    suiteId,
-    suiteLabel: suite.label,
-    status: 'running',
-    command,
-    log: '',
-    startedAt: new Date().toISOString(),
-    options,
-  }
-
-  const env = {
-    ...runtimeEnv(),
-    SNUGKV_GO_BIN: goPath(),
-  }
-  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
-    env.DURATION_SECONDS = String(options.durationSeconds)
-    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
-    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
-    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
-  }
-
-  activeValidationCancelled = false
-  const child = spawn(bashPath(), ['-lc', command], {
-    cwd: snugRepo(),
-    env,
-    detached: process.platform !== 'win32',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  activeValidation = child
-
-  const append = chunk => {
-    job.log += chunk.toString()
-    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
-    emitValidation(job)
-  }
-  child.stdout?.on('data', append)
-  child.stderr?.on('data', append)
-
-  child.once('error', error => {
-    job.status = 'failed'
-    job.error = error.message
-    job.finishedAt = new Date().toISOString()
-    activeValidation = null
-    emitValidation(job)
-  })
-
-  child.once('close', code => {
-    job.finishedAt = new Date().toISOString()
-    job.exitCode = Number.isInteger(code) ? code : undefined
-    if (job.status === 'running') {
-      if (activeValidationCancelled) {
-        job.status = 'cancelled'
-      } else {
-        job.status = code === 0 ? 'done' : 'failed'
-        if (code !== 0) job.error = `Validation exited with code ${code}`
-      }
-    }
-    activeValidation = null
-    activeValidationCancelled = false
-    emitValidation(job)
-  })
-
-  emitValidation(job)
-  return job
-})
-
-ipcMain.handle('validation:cancel', () => {
-  if (!activeValidation) return false
-  activeValidationCancelled = true
-  stopProcessTree(activeValidation)
-  return true
-})
-
-ipcMain.handle('bench:environment', () => ({
-  snugkvRepo: snugRepo(),
-  script: scriptPath(),
-  scriptFound: existsSync(scriptPath()),
-  bash: bashPath(),
-  go: goPath(),
-  redisServer: redisServerPath(),
-  fuser: fuserPath(),
-  path: runtimeEnv().PATH,
-}))
-
-ipcMain.handle('bench:start', async (_event, rawConfig) => {
-  if (activeChild) {
-    throw new Error('A benchmark is already running')
-  }
-  if (activeValidation) {
-    throw new Error('Cannot start a benchmark while validation is running')
-  }
-
-  const script = scriptPath()
-  if (!existsSync(script)) {
-    throw new Error(`Benchmark script not found at ${script}. Set SNUGKV_REPO to your SnugKV checkout.`)
-  }
-
-  const c = sanitize(rawConfig)
-  const id = randomUUID()
-  const out = join(app.getPath('userData'), 'runs', id)
-  mkdirSync(out, { recursive: true })
-
-  const args = [
-    script,
-    c.profile,
-    '-p', String(c.port),
-    '-h', c.host,
-    '-s', c.server,
-    '-k', String(c.keys),
-    '-g', String(c.getOps),
-    '-w', String(c.workers),
-    '-P', String(c.pipeline),
-    '--settle-ms', String(c.settleMs),
-    '--seed', String(c.seed),
-    '-o', out,
-  ]
-
-  const job = {
-    id,
-    status: 'running',
-    config: c,
-    command: ['bash', ...args].join(' '),
-    log: '',
-    startedAt: new Date().toISOString(),
-  }
-
-  const child = spawn(bashPath(), args, {
-    cwd: snugRepo(),
-    env: {
-      ...runtimeEnv(),
-      SNUGKV_GO_BIN: goPath(),
-    },
-  })
-  activeChild = child
-
-  let progressBuffer = ''
-  const append = chunk => {
-    const text = chunk.toString()
-    job.log += text
-    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-    emit(job)
-  }
-
-  const appendProgress = chunk => {
-    const text = chunk.toString()
-    progressBuffer += text
-    const lines = progressBuffer.split('\n')
-    progressBuffer = lines.pop() || ''
-
-    const visible = []
-    for (const line of lines) {
-      if (!line.startsWith('BENCH_PROGRESS ')) {
-        visible.push(line)
-        continue
-      }
-      try {
-        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
-        if (!job.optimization?.start_used_memory) {
-          progress.start_used_memory = progress.used_memory
-        } else {
-          progress.start_used_memory = job.optimization.start_used_memory
-        }
-        job.optimization = progress
-      } catch {
-        visible.push(line)
-      }
-    }
-
-    if (visible.length) {
-      job.log += visible.join('\n') + '\n'
-      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-    }
-
-    emit(job)
-  }
-
-  child.stdout.on('data', append)
-  child.stderr.on('data', appendProgress)
-
-  child.on('error', error => {
-    job.status = 'failed'
-    job.error = error.message
-    job.finishedAt = new Date().toISOString()
-    activeChild = null
-    emit(job)
-  })
-
-  child.on('close', code => {
-    job.finishedAt = new Date().toISOString()
-    activeChild = null
-
-    if (code !== 0) {
-      job.status = 'failed'
-      job.error = `Benchmark exited with code ${code}`
-      emit(job)
-      return
-    }
-
-    try {
-      const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
-      const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
-      job.results = { load, get }
-      job.status = 'done'
-      recordCompletedResult(load, get)
-    } catch (error) {
-      job.status = 'failed'
-      job.error = error instanceof Error ? error.message : String(error)
-    }
-
-    emit(job)
-  })
-
-  return job
-})
-
-ipcMain.handle('bench:cancel', () => {
-  if (!activeChild) return false
-  activeChild.kill('SIGTERM')
-  return true
-})
-
-ipcMain.handle('bench:save', async (_event, payload) => {
-  const suggested = payload?.filename || 'snugkv-benchmark.json'
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save benchmark result',
-    defaultPath: suggested,
-    filters: [{ name: 'JSON', extensions: ['json'] }],
-  })
-  if (result.canceled || !result.filePath) return { saved: false }
-  writeFileSync(result.filePath, JSON.stringify(payload.data, null, 2) + '\n')
-  return { saved: true, path: result.filePath }
-})
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1050,
-    minHeight: 700,
-    backgroundColor: '#090c10',
-    title: 'Skv Benchmark Lab',
-    icon: windowIconPath(),
-    webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
-
-  mainWindow.removeMenu()
-
-  if (app.isPackaged) {
-    mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
-  } else {
-    mainWindow.loadURL(process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173')
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-  }
-}
-
-app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
-
-app.on('before-quit', () => {
-  if (activeChild) activeChild.kill('SIGTERM')
-  if (activeValidation) stopProcessTree(activeValidation)
-  if (activeServer?.child) activeServer.child.kill('SIGTERM')
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-])
+    const raw = runDbCli(['JSON.GET', key, '$'])
     try { value = JSON.parse(raw) } catch { value = raw }
-    command = dbCommandDisplay(['JSON.GET', key, '
-  if (!profiles.has(String(profile))) return emptyBest()
-  return bestResultsForProfile(String(profile))
-})
-
-ipcMain.handle('history:reset', (_event, profile) => {
-  const normalized = String(profile)
-  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
-
-  const now = new Date().toISOString()
-  const resets = loadHistoryResets()
-  resets[normalized] = now
-  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
-
-  const history = loadSavedHistory()
-  if (history[normalized]) {
-    delete history[normalized]
-    saveHistory(history)
-  }
-
-  const best = emptyBest()
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('history:update', { profile: normalized, best })
-  }
-  return best
-})
-
-
-ipcMain.handle('validation:suites', () => validationSuites)
-
-ipcMain.handle('validation:start', async (_event, request = {}) => {
-  if (activeValidation) throw new Error('A validation suite is already running')
-  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
-
-  const suiteId = String(request.suiteId || '')
-  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
-
-  const suite = validationSuites.find(item => item.id === suiteId)
-  const options = sanitizeValidationOptions(request.options)
-
-  // Release/chaos suites own their local ports. Stop any server managed by the
-  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
-  if (activeServer) await killBenchmarkPorts()
-
-  const command = validationCommand(suiteId, options)
-  const id = randomUUID()
-  const job = {
-    id,
-    suiteId,
-    suiteLabel: suite.label,
-    status: 'running',
-    command,
-    log: '',
-    startedAt: new Date().toISOString(),
-    options,
-  }
-
-  const env = {
-    ...runtimeEnv(),
-    SNUGKV_GO_BIN: goPath(),
-  }
-  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
-    env.DURATION_SECONDS = String(options.durationSeconds)
-    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
-    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
-    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
-  }
-
-  activeValidationCancelled = false
-  const child = spawn(bashPath(), ['-lc', command], {
-    cwd: snugRepo(),
-    env,
-    detached: process.platform !== 'win32',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  activeValidation = child
-
-  const append = chunk => {
-    job.log += chunk.toString()
-    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
-    emitValidation(job)
-  }
-  child.stdout?.on('data', append)
-  child.stderr?.on('data', append)
-
-  child.once('error', error => {
-    job.status = 'failed'
-    job.error = error.message
-    job.finishedAt = new Date().toISOString()
-    activeValidation = null
-    emitValidation(job)
-  })
-
-  child.once('close', code => {
-    job.finishedAt = new Date().toISOString()
-    job.exitCode = Number.isInteger(code) ? code : undefined
-    if (job.status === 'running') {
-      if (activeValidationCancelled) {
-        job.status = 'cancelled'
-      } else {
-        job.status = code === 0 ? 'done' : 'failed'
-        if (code !== 0) job.error = `Validation exited with code ${code}`
-      }
-    }
-    activeValidation = null
-    activeValidationCancelled = false
-    emitValidation(job)
-  })
-
-  emitValidation(job)
-  return job
-})
-
-ipcMain.handle('validation:cancel', () => {
-  if (!activeValidation) return false
-  activeValidationCancelled = true
-  stopProcessTree(activeValidation)
-  return true
-})
-
-ipcMain.handle('bench:environment', () => ({
-  snugkvRepo: snugRepo(),
-  script: scriptPath(),
-  scriptFound: existsSync(scriptPath()),
-  bash: bashPath(),
-  go: goPath(),
-  redisServer: redisServerPath(),
-  fuser: fuserPath(),
-  path: runtimeEnv().PATH,
-}))
-
-ipcMain.handle('bench:start', async (_event, rawConfig) => {
-  if (activeChild) {
-    throw new Error('A benchmark is already running')
-  }
-  if (activeValidation) {
-    throw new Error('Cannot start a benchmark while validation is running')
-  }
-
-  const script = scriptPath()
-  if (!existsSync(script)) {
-    throw new Error(`Benchmark script not found at ${script}. Set SNUGKV_REPO to your SnugKV checkout.`)
-  }
-
-  const c = sanitize(rawConfig)
-  const id = randomUUID()
-  const out = join(app.getPath('userData'), 'runs', id)
-  mkdirSync(out, { recursive: true })
-
-  const args = [
-    script,
-    c.profile,
-    '-p', String(c.port),
-    '-h', c.host,
-    '-s', c.server,
-    '-k', String(c.keys),
-    '-g', String(c.getOps),
-    '-w', String(c.workers),
-    '-P', String(c.pipeline),
-    '--settle-ms', String(c.settleMs),
-    '--seed', String(c.seed),
-    '-o', out,
-  ]
-
-  const job = {
-    id,
-    status: 'running',
-    config: c,
-    command: ['bash', ...args].join(' '),
-    log: '',
-    startedAt: new Date().toISOString(),
-  }
-
-  const child = spawn(bashPath(), args, {
-    cwd: snugRepo(),
-    env: {
-      ...runtimeEnv(),
-      SNUGKV_GO_BIN: goPath(),
-    },
-  })
-  activeChild = child
-
-  let progressBuffer = ''
-  const append = chunk => {
-    const text = chunk.toString()
-    job.log += text
-    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-    emit(job)
-  }
-
-  const appendProgress = chunk => {
-    const text = chunk.toString()
-    progressBuffer += text
-    const lines = progressBuffer.split('\n')
-    progressBuffer = lines.pop() || ''
-
-    const visible = []
-    for (const line of lines) {
-      if (!line.startsWith('BENCH_PROGRESS ')) {
-        visible.push(line)
-        continue
-      }
-      try {
-        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
-        if (!job.optimization?.start_used_memory) {
-          progress.start_used_memory = progress.used_memory
-        } else {
-          progress.start_used_memory = job.optimization.start_used_memory
-        }
-        job.optimization = progress
-      } catch {
-        visible.push(line)
-      }
-    }
-
-    if (visible.length) {
-      job.log += visible.join('\n') + '\n'
-      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-    }
-
-    emit(job)
-  }
-
-  child.stdout.on('data', append)
-  child.stderr.on('data', appendProgress)
-
-  child.on('error', error => {
-    job.status = 'failed'
-    job.error = error.message
-    job.finishedAt = new Date().toISOString()
-    activeChild = null
-    emit(job)
-  })
-
-  child.on('close', code => {
-    job.finishedAt = new Date().toISOString()
-    activeChild = null
-
-    if (code !== 0) {
-      job.status = 'failed'
-      job.error = `Benchmark exited with code ${code}`
-      emit(job)
-      return
-    }
-
-    try {
-      const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
-      const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
-      job.results = { load, get }
-      job.status = 'done'
-      recordCompletedResult(load, get)
-    } catch (error) {
-      job.status = 'failed'
-      job.error = error instanceof Error ? error.message : String(error)
-    }
-
-    emit(job)
-  })
-
-  return job
-})
-
-ipcMain.handle('bench:cancel', () => {
-  if (!activeChild) return false
-  activeChild.kill('SIGTERM')
-  return true
-})
-
-ipcMain.handle('bench:save', async (_event, payload) => {
-  const suggested = payload?.filename || 'snugkv-benchmark.json'
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save benchmark result',
-    defaultPath: suggested,
-    filters: [{ name: 'JSON', extensions: ['json'] }],
-  })
-  if (result.canceled || !result.filePath) return { saved: false }
-  writeFileSync(result.filePath, JSON.stringify(payload.data, null, 2) + '\n')
-  return { saved: true, path: result.filePath }
-})
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1050,
-    minHeight: 700,
-    backgroundColor: '#090c10',
-    title: 'Skv Benchmark Lab',
-    icon: windowIconPath(),
-    webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
-
-  mainWindow.removeMenu()
-
-  if (app.isPackaged) {
-    mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
-  } else {
-    mainWindow.loadURL(process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173')
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-  }
-}
-
-app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
-
-app.on('before-quit', () => {
-  if (activeChild) activeChild.kill('SIGTERM')
-  if (activeValidation) stopProcessTree(activeValidation)
-  if (activeServer?.child) activeServer.child.kill('SIGTERM')
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-])
+    command = dbCommandDisplay(['JSON.GET', key, '$'])
   } else {
     try {
       value = runDbCli(['GET', key])
@@ -1482,9 +838,23 @@ app.on('window-all-closed', () => {
   }
 
   let encoding
+  let memoryBytes
   try { encoding = runDbCli(['OBJECT', 'ENCODING', key]) || undefined } catch {}
+  try {
+    const rawMemory = Number(runDbCli(['MEMORY', 'USAGE', key]))
+    if (Number.isFinite(rawMemory)) memoryBytes = rawMemory
+  } catch {}
 
-  return { key, type, ttl: Number.isFinite(ttl) ? ttl : -1, length, encoding, value, command }
+  return {
+    key,
+    type,
+    ttl: Number.isFinite(ttl) ? ttl : -1,
+    length,
+    encoding,
+    memoryBytes,
+    value,
+    command,
+  }
 })
 
 ipcMain.handle('db:set-string', (_event, request = {}) => {
@@ -1527,332 +897,110 @@ ipcMain.handle('db:create-example', (_event, request = {}) => {
   if (kind === 'list') args = ['RPUSH', key, 'queued', 'processing', 'done']
   if (kind === 'set') args = ['SADD', key, 'redis', 'snugkv', 'database']
   if (kind === 'zset') args = ['ZADD', key, '1200', 'alice', '950', 'bob', '740', 'carol']
-  if (kind === 'json') args = ['JSON.SET', key, '
-  if (!profiles.has(String(profile))) return emptyBest()
-  return bestResultsForProfile(String(profile))
-})
-
-ipcMain.handle('history:reset', (_event, profile) => {
-  const normalized = String(profile)
-  if (!profiles.has(normalized)) throw new Error('Unknown benchmark profile')
-
-  const now = new Date().toISOString()
-  const resets = loadHistoryResets()
-  resets[normalized] = now
-  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
-
-  const history = loadSavedHistory()
-  if (history[normalized]) {
-    delete history[normalized]
-    saveHistory(history)
-  }
-
-  const best = emptyBest()
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('history:update', { profile: normalized, best })
-  }
-  return best
-})
-
-
-ipcMain.handle('validation:suites', () => validationSuites)
-
-ipcMain.handle('validation:start', async (_event, request = {}) => {
-  if (activeValidation) throw new Error('A validation suite is already running')
-  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
-
-  const suiteId = String(request.suiteId || '')
-  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
-
-  const suite = validationSuites.find(item => item.id === suiteId)
-  const options = sanitizeValidationOptions(request.options)
-
-  // Release/chaos suites own their local ports. Stop any server managed by the
-  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
-  if (activeServer) await killBenchmarkPorts()
-
-  const command = validationCommand(suiteId, options)
-  const id = randomUUID()
-  const job = {
-    id,
-    suiteId,
-    suiteLabel: suite.label,
-    status: 'running',
-    command,
-    log: '',
-    startedAt: new Date().toISOString(),
-    options,
-  }
-
-  const env = {
-    ...runtimeEnv(),
-    SNUGKV_GO_BIN: goPath(),
-  }
-  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
-    env.DURATION_SECONDS = String(options.durationSeconds)
-    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
-    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
-    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
-  }
-
-  activeValidationCancelled = false
-  const child = spawn(bashPath(), ['-lc', command], {
-    cwd: snugRepo(),
-    env,
-    detached: process.platform !== 'win32',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  activeValidation = child
-
-  const append = chunk => {
-    job.log += chunk.toString()
-    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
-    emitValidation(job)
-  }
-  child.stdout?.on('data', append)
-  child.stderr?.on('data', append)
-
-  child.once('error', error => {
-    job.status = 'failed'
-    job.error = error.message
-    job.finishedAt = new Date().toISOString()
-    activeValidation = null
-    emitValidation(job)
-  })
-
-  child.once('close', code => {
-    job.finishedAt = new Date().toISOString()
-    job.exitCode = Number.isInteger(code) ? code : undefined
-    if (job.status === 'running') {
-      if (activeValidationCancelled) {
-        job.status = 'cancelled'
-      } else {
-        job.status = code === 0 ? 'done' : 'failed'
-        if (code !== 0) job.error = `Validation exited with code ${code}`
-      }
-    }
-    activeValidation = null
-    activeValidationCancelled = false
-    emitValidation(job)
-  })
-
-  emitValidation(job)
-  return job
-})
-
-ipcMain.handle('validation:cancel', () => {
-  if (!activeValidation) return false
-  activeValidationCancelled = true
-  stopProcessTree(activeValidation)
-  return true
-})
-
-ipcMain.handle('bench:environment', () => ({
-  snugkvRepo: snugRepo(),
-  script: scriptPath(),
-  scriptFound: existsSync(scriptPath()),
-  bash: bashPath(),
-  go: goPath(),
-  redisServer: redisServerPath(),
-  fuser: fuserPath(),
-  path: runtimeEnv().PATH,
-}))
-
-ipcMain.handle('bench:start', async (_event, rawConfig) => {
-  if (activeChild) {
-    throw new Error('A benchmark is already running')
-  }
-  if (activeValidation) {
-    throw new Error('Cannot start a benchmark while validation is running')
-  }
-
-  const script = scriptPath()
-  if (!existsSync(script)) {
-    throw new Error(`Benchmark script not found at ${script}. Set SNUGKV_REPO to your SnugKV checkout.`)
-  }
-
-  const c = sanitize(rawConfig)
-  const id = randomUUID()
-  const out = join(app.getPath('userData'), 'runs', id)
-  mkdirSync(out, { recursive: true })
-
-  const args = [
-    script,
-    c.profile,
-    '-p', String(c.port),
-    '-h', c.host,
-    '-s', c.server,
-    '-k', String(c.keys),
-    '-g', String(c.getOps),
-    '-w', String(c.workers),
-    '-P', String(c.pipeline),
-    '--settle-ms', String(c.settleMs),
-    '--seed', String(c.seed),
-    '-o', out,
-  ]
-
-  const job = {
-    id,
-    status: 'running',
-    config: c,
-    command: ['bash', ...args].join(' '),
-    log: '',
-    startedAt: new Date().toISOString(),
-  }
-
-  const child = spawn(bashPath(), args, {
-    cwd: snugRepo(),
-    env: {
-      ...runtimeEnv(),
-      SNUGKV_GO_BIN: goPath(),
-    },
-  })
-  activeChild = child
-
-  let progressBuffer = ''
-  const append = chunk => {
-    const text = chunk.toString()
-    job.log += text
-    if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-    emit(job)
-  }
-
-  const appendProgress = chunk => {
-    const text = chunk.toString()
-    progressBuffer += text
-    const lines = progressBuffer.split('\n')
-    progressBuffer = lines.pop() || ''
-
-    const visible = []
-    for (const line of lines) {
-      if (!line.startsWith('BENCH_PROGRESS ')) {
-        visible.push(line)
-        continue
-      }
-      try {
-        const progress = JSON.parse(line.slice('BENCH_PROGRESS '.length))
-        if (!job.optimization?.start_used_memory) {
-          progress.start_used_memory = progress.used_memory
-        } else {
-          progress.start_used_memory = job.optimization.start_used_memory
-        }
-        job.optimization = progress
-      } catch {
-        visible.push(line)
-      }
-    }
-
-    if (visible.length) {
-      job.log += visible.join('\n') + '\n'
-      if (job.log.length > 300_000) job.log = job.log.slice(-300_000)
-    }
-
-    emit(job)
-  }
-
-  child.stdout.on('data', append)
-  child.stderr.on('data', appendProgress)
-
-  child.on('error', error => {
-    job.status = 'failed'
-    job.error = error.message
-    job.finishedAt = new Date().toISOString()
-    activeChild = null
-    emit(job)
-  })
-
-  child.on('close', code => {
-    job.finishedAt = new Date().toISOString()
-    activeChild = null
-
-    if (code !== 0) {
-      job.status = 'failed'
-      job.error = `Benchmark exited with code ${code}`
-      emit(job)
-      return
-    }
-
-    try {
-      const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
-      const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
-      job.results = { load, get }
-      job.status = 'done'
-      recordCompletedResult(load, get)
-    } catch (error) {
-      job.status = 'failed'
-      job.error = error instanceof Error ? error.message : String(error)
-    }
-
-    emit(job)
-  })
-
-  return job
-})
-
-ipcMain.handle('bench:cancel', () => {
-  if (!activeChild) return false
-  activeChild.kill('SIGTERM')
-  return true
-})
-
-ipcMain.handle('bench:save', async (_event, payload) => {
-  const suggested = payload?.filename || 'snugkv-benchmark.json'
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save benchmark result',
-    defaultPath: suggested,
-    filters: [{ name: 'JSON', extensions: ['json'] }],
-  })
-  if (result.canceled || !result.filePath) return { saved: false }
-  writeFileSync(result.filePath, JSON.stringify(payload.data, null, 2) + '\n')
-  return { saved: true, path: result.filePath }
-})
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1050,
-    minHeight: 700,
-    backgroundColor: '#090c10',
-    title: 'Skv Benchmark Lab',
-    icon: windowIconPath(),
-    webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
-
-  mainWindow.removeMenu()
-
-  if (app.isPackaged) {
-    mainWindow.loadFile(join(__dirname, '..', 'dist', 'index.html'))
-  } else {
-    mainWindow.loadURL(process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173')
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
-  }
-}
-
-app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
-
-app.on('before-quit', () => {
-  if (activeChild) activeChild.kill('SIGTERM')
-  if (activeValidation) stopProcessTree(activeValidation)
-  if (activeServer?.child) activeServer.child.kill('SIGTERM')
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-, JSON.stringify({ name: 'Ada', role: 'engineer', skills: ['Go', 'TypeScript'], active: true })]
+  if (kind === 'json') args = ['JSON.SET', key, '$', JSON.stringify({ name: 'Ada', role: 'engineer', skills: ['Go', 'TypeScript'], active: true })]
 
   runDbCli(args)
   return { ok: true, command: dbCommandDisplay(args) }
+})
+
+ipcMain.handle('db:mutate', (_event, request = {}) => {
+  const action = String(request.action || '')
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+
+  let args
+  if (action === 'hash-set') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HSET', key, field, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'hash-del') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HDEL', key, field]
+  } else if (action === 'list-push') {
+    args = [request.side === 'left' ? 'LPUSH' : 'RPUSH', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'list-set') {
+    const index = Number(request.index)
+    if (!Number.isInteger(index)) throw new Error('List index must be an integer')
+    args = ['LSET', key, String(index), cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'list-del-index') {
+    const index = Number(request.index)
+    if (!Number.isInteger(index)) throw new Error('List index must be an integer')
+    const marker = `__snugkv_delete_${randomUUID()}__`
+    runDbCli(['LSET', key, String(index), marker])
+    runDbCli(['LREM', key, '1', marker])
+    return { ok: true, command: dbCommandDisplay(['LREM', key, '1', marker]) }
+  } else if (action === 'set-add') {
+    args = ['SADD', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'set-del') {
+    args = ['SREM', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'zset-set') {
+    const score = Number(request.score)
+    if (!Number.isFinite(score)) throw new Error('Score must be a number')
+    const member = cleanDbText(request.member, 8 * 1024 * 1024)
+    if (!member) throw new Error('Member is required')
+    args = ['ZADD', key, String(score), member]
+  } else if (action === 'zset-del') {
+    const member = cleanDbText(request.member, 8 * 1024 * 1024)
+    if (!member) throw new Error('Member is required')
+    args = ['ZREM', key, member]
+  } else if (action === 'json-set-root') {
+    const raw = cleanDbText(request.value, 8 * 1024 * 1024)
+    try { JSON.parse(raw) } catch { throw new Error('JSON value is invalid') }
+    args = ['JSON.SET', key, '$', raw]
+  } else {
+    throw new Error('Unsupported database mutation')
+  }
+
+  runDbCli(args)
+  return { ok: true, command: dbCommandDisplay(args) }
+})
+
+ipcMain.handle('db:bulk', (_event, request = {}) => {
+  const action = String(request.action || '')
+  const keys = Array.isArray(request.keys)
+    ? request.keys.map(key => cleanDbText(key, 4096)).filter(Boolean).slice(0, 500)
+    : []
+  if (!keys.length) throw new Error('Select at least one key')
+
+  let affected = 0
+  let command = ''
+  if (action === 'delete') {
+    for (const key of keys) affected += Number(runDbCli(['DEL', key])) || 0
+    command = dbCommandDisplay(['DEL', ...keys])
+  } else if (action === 'expire') {
+    const seconds = positiveInt(request.seconds, 60, 365 * 24 * 60 * 60)
+    for (const key of keys) affected += Number(runDbCli(['EXPIRE', key, String(seconds)])) || 0
+    command = dbCommandDisplay(['EXPIRE', '<each selected key>', String(seconds)])
+  } else if (action === 'persist') {
+    for (const key of keys) affected += Number(runDbCli(['PERSIST', key])) || 0
+    command = dbCommandDisplay(['PERSIST', '<each selected key>'])
+  } else {
+    throw new Error('Unsupported bulk action')
+  }
+  return { ok: true, command, affected }
+})
+
+ipcMain.handle('db:command', (_event, request = {}) => {
+  const action = String(request.action || '')
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+
+  let args
+  if (action === 'get') args = ['GET', key]
+  else if (action === 'type') args = ['TYPE', key]
+  else if (action === 'ttl') args = ['TTL', key]
+  else if (action === 'exists') args = ['EXISTS', key]
+  else if (action === 'incr') {
+    const amount = Number(request.amount)
+    if (!Number.isSafeInteger(amount)) throw new Error('Increment must be an integer')
+    args = amount === 1 ? ['INCR', key] : ['INCRBY', key, String(amount)]
+  } else {
+    throw new Error('Unsupported command builder action')
+  }
+
+  const result = runDbCli(args)
+  return { ok: true, command: dbCommandDisplay(args), result }
 })
 
 ipcMain.handle('history:get', (_event, profile) => {
