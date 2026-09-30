@@ -86,6 +86,13 @@ const validationSuites = [
     destructive: true,
   },
   {
+    id: 'cli-command-matrix',
+    label: 'CLI Command Matrix',
+    description: 'End-to-end redis-cli coverage for core commands plus feature-aware JSON, search, functions, persistence and cluster commands.',
+    category: 'cli',
+    destructive: true,
+  },
+  {
     id: 'full-soak',
     label: 'Full Soak',
     description: 'Run mixed workload soak followed by the distributed cluster chaos soak for the selected duration.',
@@ -288,6 +295,8 @@ function validationCommand(suiteId, options) {
       return "go test ./internal/resp -run=^$ -fuzz=FuzzReadCommand -fuzztime=60s"
     case 'redis82-differential':
       return 'bash scripts/release/run-redis82-differential-gates.sh'
+    case 'cli-command-matrix':
+      return `SNUGKV_REPO=${JSON.stringify(snugRepo())} bash ${JSON.stringify(join(__dirname, '..', 'scripts', 'run-cli-command-matrix.sh'))}`
     case 'durability':
       return 'bash scripts/release/run-durability-gates.sh'
     case 'cluster-recovery':
