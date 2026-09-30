@@ -67,9 +67,9 @@ export default function ValidationLab() {
           <p>Run the same release, recovery and soak checks used from the terminal.</p>
         </div>
 
-        {(['release', 'soak'] as const).map(category => (
+        {(['release', 'cli', 'soak'] as const).map(category => (
           <div className="validation-group" key={category}>
-            <div className="validation-group-title">{category === 'release' ? 'Release & correctness' : 'Soak & chaos'}</div>
+            <div className="validation-group-title">{category === 'release' ? 'Release & correctness' : category === 'cli' ? 'CLI commands' : 'Soak & chaos'}</div>
             {suites.filter(item => item.category === category).map(item => (
               <button
                 key={item.id}
@@ -88,7 +88,7 @@ export default function ValidationLab() {
       <div className="validation-main">
         <div className="validation-hero">
           <div>
-            <span className="eyebrow">{suite?.category === 'soak' ? 'Long-running validation' : 'Release gate'}</span>
+            <span className="eyebrow">{suite?.category === 'soak' ? 'Long-running validation' : suite?.category === 'cli' ? 'End-to-end command validation' : 'Release gate'}</span>
             <h1>{suite?.label ?? 'Validation Lab'}</h1>
             <p>{suite?.description ?? 'Loading test suites…'}</p>
           </div>
