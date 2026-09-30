@@ -184,3 +184,12 @@ export type DbCommandAction =
   | { action: 'ttl'; key: string }
   | { action: 'exists'; key: string }
   | { action: 'incr'; key: string; amount: number }
+  | { action: 'set'; key: string; value: string }
+  | { action: 'delete'; key: string }
+  | { action: 'expire'; key: string; seconds: number }
+  | { action: 'hget'; key: string; field: string }
+  | { action: 'hset'; key: string; field: string; value: string }
+  | { action: 'lpush'; key: string; value: string }
+  | { action: 'rpush'; key: string; value: string }
+  | { action: 'sadd'; key: string; value: string }
+  | { action: 'zadd'; key: string; member: string; score: number }
