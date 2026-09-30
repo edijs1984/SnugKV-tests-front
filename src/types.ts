@@ -100,6 +100,7 @@ export type ValidationSuiteId =
   | 'cluster-recovery'
   | 'cluster-corrupt-replica'
   | 'cluster-persistence-failure'
+  | 'full-soak'
   | 'distributed-soak'
   | 'mixed-soak'
 
