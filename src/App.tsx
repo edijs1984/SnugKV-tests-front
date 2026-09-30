@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
 import ValidationLab from './ValidationLab'
+import DatabaseExplorer from './DatabaseExplorer'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -34,7 +35,7 @@ const us = (ns: number) => `${(ns / 1000).toFixed(2)} μs`
 const bytes = (n: number) => nf.format(Math.round(n))
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'benchmark' | 'validation'>('benchmark')
+  const [activeTab, setActiveTab] = useState<'benchmark' | 'database' | 'validation'>('benchmark')
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
@@ -236,7 +237,7 @@ function App() {
             <span>S</span><span>k</span><span>v</span>
           </div>
           <div className="brand-divider" />
-          <div className="brand-subtitle">Benchmark & Validation Lab</div>
+          <div className="brand-subtitle">SnugKV Desktop Studio</div>
         </div>
 
         <nav className="top-tabs" aria-label="Workspace">
@@ -245,6 +246,12 @@ function App() {
             onClick={() => setActiveTab('benchmark')}
           >
             Benchmark
+          </button>
+          <button
+            className={activeTab === 'database' ? 'active' : ''}
+            onClick={() => setActiveTab('database')}
+          >
+            Database
           </button>
           <button
             className={activeTab === 'validation' ? 'active' : ''}
@@ -256,7 +263,7 @@ function App() {
 
         <div className={`app-status ${activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'idle'}`}>
           <span className="status-dot" />
-          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'validation'}</span>
+          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : activeTab === 'database' ? (serverStatus.running ? 'connected' : 'offline') : 'validation'}</span>
         </div>
       </header>
 
@@ -533,6 +540,8 @@ function App() {
           </div>
         </aside>
       </section>
+      ) : activeTab === 'database' ? (
+        <DatabaseExplorer serverStatus={serverStatus} />
       ) : (
         <ValidationLab />
       )}
