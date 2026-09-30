@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
+import ValidationLab from './ValidationLab'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -33,6 +34,7 @@ const us = (ns: number) => `${(ns / 1000).toFixed(2)} μs`
 const bytes = (n: number) => nf.format(Math.round(n))
 
 function App() {
+  const [activeTab, setActiveTab] = useState<'benchmark' | 'validation'>('benchmark')
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
@@ -234,15 +236,31 @@ function App() {
             <span>S</span><span>k</span><span>v</span>
           </div>
           <div className="brand-divider" />
-          <div className="brand-subtitle">Benchmark Lab</div>
+          <div className="brand-subtitle">Benchmark & Validation Lab</div>
         </div>
 
-        <div className={`app-status ${job?.status ?? 'idle'}`}>
+        <nav className="top-tabs" aria-label="Workspace">
+          <button
+            className={activeTab === 'benchmark' ? 'active' : ''}
+            onClick={() => setActiveTab('benchmark')}
+          >
+            Benchmark
+          </button>
+          <button
+            className={activeTab === 'validation' ? 'active' : ''}
+            onClick={() => setActiveTab('validation')}
+          >
+            Tests & Soak
+          </button>
+        </nav>
+
+        <div className={`app-status ${activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'idle'}`}>
           <span className="status-dot" />
-          <span>{job?.status ?? 'idle'}</span>
+          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'validation'}</span>
         </div>
       </header>
 
+      {activeTab === 'benchmark' ? (
       <section className="workspace">
         <div className="main-area">
           <div className="server-strip">
@@ -515,6 +533,9 @@ function App() {
           </div>
         </aside>
       </section>
+      ) : (
+        <ValidationLab />
+      )}
 
       <footer className="app-footer">
         <div><span>Skv</span><span>v0.1.7</span></div>
