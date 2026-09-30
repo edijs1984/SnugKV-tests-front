@@ -26,4 +26,12 @@ contextBridge.exposeInMainWorld('snugBench', {
     ipcRenderer.on('history:update', listener)
     return () => ipcRenderer.removeListener('history:update', listener)
   },
+  validationSuites: () => ipcRenderer.invoke('validation:suites'),
+  startValidation: (suiteId, options) => ipcRenderer.invoke('validation:start', { suiteId, options }),
+  cancelValidation: () => ipcRenderer.invoke('validation:cancel'),
+  onValidationUpdate: callback => {
+    const listener = (_event, job) => callback(job)
+    ipcRenderer.on('validation:update', listener)
+    return () => ipcRenderer.removeListener('validation:update', listener)
+  },
 })
