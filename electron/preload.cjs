@@ -34,4 +34,10 @@ contextBridge.exposeInMainWorld('snugBench', {
     ipcRenderer.on('validation:update', listener)
     return () => ipcRenderer.removeListener('validation:update', listener)
   },
+  dbListKeys: options => ipcRenderer.invoke('db:list-keys', options),
+  dbGetKey: options => ipcRenderer.invoke('db:get-key', options),
+  dbSetString: options => ipcRenderer.invoke('db:set-string', options),
+  dbSetTtl: options => ipcRenderer.invoke('db:set-ttl', options),
+  dbDeleteKey: options => ipcRenderer.invoke('db:delete-key', options),
+  dbCreateExample: options => ipcRenderer.invoke('db:create-example', options),
 })
