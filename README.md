@@ -17,7 +17,12 @@ The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containe
 - Native Save dialog for result JSON.
 - Cancel running benchmark.
 - Shows the equivalent CLI command.
-- No Docker or database lifecycle management.
+- Dedicated **Tests & Soak** tab with live validation output.
+- One-click release suites: full Go tests, race detector, vet, RESP fuzz, Redis 8.2 differential gates, durability gates, and cluster recovery.
+- Focused chaos suites for corrupted-replica and persistence-failure recovery.
+- Configurable mixed workload soak, distributed chaos soak, and combined Full Soak presets.
+- Validation cancellation terminates the spawned process group to avoid orphan test nodes.
+- Validation commands are allow-listed in the Electron main process; the renderer cannot execute arbitrary shell commands.
 
 > **Warning:** the benchmark runs `FLUSHDB` on the selected target.
 
@@ -75,6 +80,43 @@ cmd/rediswirebench
 ```
 
 Set `SNUGKV_REPO` when launching the app if that checkout is not next to the application project.
+
+
+## Tests & Soak tab
+
+The desktop app can run SnugKV's retained validation directly from the local
+SnugKV checkout. Open **Tests & Soak** and choose a suite.
+
+Release/correctness suites include:
+
+- Full Release Validation
+- Go Test
+- Race Detector
+- Go Vet
+- RESP Fuzz
+- Redis 8.2 Differential
+- Durability Matrix
+- Cluster Recovery Matrix
+- Corrupt Replica Recovery
+- Persistence Failure Recovery
+
+Long-running suites include:
+
+- Full Soak
+- Distributed Chaos Soak
+- Mixed Workload Soak
+
+Soak suites expose duration, case timeout, key count, worker count, value size,
+and seed controls. The runner streams stdout/stderr into the desktop console and
+supports cancellation.
+
+Some validation suites start local Redis/SnugKV instances, use isolated local
+ports, and intentionally exercise restart, corruption, persistence failure, and
+`FLUSHDB` behavior. Do not run them against production data.
+
+The Validation Lab uses the SnugKV checkout resolved by `SNUGKV_REPO` (or the
+same automatic `../SnugKV` lookup used by the benchmark tab), so the available
+test scripts are always the scripts from that local checkout.
 
 ## CLI parity
 
