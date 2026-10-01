@@ -4,6 +4,7 @@ import ValidationLab from './ValidationLab'
 import DatabaseBrowser from './DatabaseBrowser'
 import Playground from './Playground'
 import BenchmarkMatrix from './BenchmarkMatrix'
+import PipelineSweep from './PipelineSweep'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -54,6 +55,7 @@ function App() {
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
   const [matrixBusy, setMatrixBusy] = useState(false)
+  const [sweepBusy, setSweepBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
   const [serverBusy, setServerBusy] = useState(false)
@@ -301,7 +303,7 @@ function App() {
                 <button
                   key={kind}
                   className={activeMode === kind ? 'server-choice active' : 'server-choice'}
-                  disabled={serverBusy || busy || matrixBusy}
+                  disabled={serverBusy || busy || matrixBusy || sweepBusy}
                   onClick={() => startServer(kind)}
                 >
                   {label}
@@ -314,7 +316,7 @@ function App() {
               {serverStatus.running && (
                 <button
                   className="mode-pill"
-                  disabled={serverBusy || busy || matrixBusy}
+                  disabled={serverBusy || busy || matrixBusy || sweepBusy}
                   onClick={stopServer}
                   title="Stop server"
                 >
@@ -414,7 +416,7 @@ function App() {
               </details>
 
               <div className="run-actions">
-                <button className="primary-run" disabled={busy || matrixBusy || !serverStatus.running} onClick={run}>
+                <button className="primary-run" disabled={busy || matrixBusy || sweepBusy || !serverStatus.running} onClick={run}>
                   <span className="play-icon">▶</span>
                   {busy ? 'Benchmark running…' : 'Run benchmark'}
                 </button>
@@ -514,10 +516,16 @@ function App() {
             </section>
           </div>
 
+          <PipelineSweep
+            baseConfig={config}
+            disabled={busy || serverBusy || matrixBusy}
+            onRunningChange={setSweepBusy}
+          />
+
           <BenchmarkMatrix
             profiles={profiles}
             baseConfig={config}
-            disabled={busy || serverBusy || matrixBusy}
+            disabled={busy || serverBusy || matrixBusy || sweepBusy}
             onRunningChange={setMatrixBusy}
           />
         </div>
