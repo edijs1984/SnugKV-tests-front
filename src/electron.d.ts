@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction } from './types'
 
 export {}
 
@@ -9,6 +9,7 @@ declare global {
       start(config: BenchmarkConfig): Promise<Job>
       cancel(): Promise<boolean>
       save(payload: { filename: string; data: unknown }): Promise<{ saved: boolean; path?: string }>
+      saveText(payload: { filename: string; data: string; type?: 'csv' | 'txt' }): Promise<{ saved: boolean; path?: string }>
       onUpdate(callback: (job: Job) => void): () => void
       serverStatus(): Promise<ServerStatus>
       startServer(kind: 'redis' | 'snug-raw' | 'snug-opt', optimizerMode?: OptimizerMode): Promise<ServerStatus>
@@ -17,6 +18,19 @@ declare global {
       bestResults(profile: string): Promise<ProfileBestResults>
       resetBestResults(profile: string): Promise<ProfileBestResults>
       onHistoryUpdate(callback: (payload: { profile: string; best: ProfileBestResults }) => void): () => void
+      validationSuites(): Promise<ValidationSuite[]>
+      startValidation(suiteId: ValidationSuiteId, options: ValidationOptions): Promise<ValidationJob>
+      cancelValidation(): Promise<boolean>
+      onValidationUpdate(callback: (job: ValidationJob) => void): () => void
+      dbListKeys(options: { pattern: string; count: number }): Promise<DbListResult>
+      dbGetKey(options: { key: string }): Promise<DbKeyDetails>
+      dbSetString(options: { key: string; value: string }): Promise<{ ok: boolean; command: string }>
+      dbSetTtl(options: { key: string; seconds: number | null }): Promise<{ ok: boolean; command: string }>
+      dbDeleteKey(options: { key: string }): Promise<{ ok: boolean; command: string }>
+      dbCreateExample(options: { key: string; kind: 'string' | 'hash' | 'list' | 'set' | 'zset' | 'json' }): Promise<{ ok: boolean; command: string }>
+      dbMutate(request: DbMutation): Promise<{ ok: boolean; command: string }>
+      dbBulk(request: DbBulkAction): Promise<{ ok: boolean; command: string; affected: number }>
+      dbCommand(request: DbCommandAction): Promise<{ ok: boolean; command: string; result: string }>
     }
   }
 }

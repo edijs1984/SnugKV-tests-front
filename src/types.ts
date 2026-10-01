@@ -87,3 +87,109 @@ export type ProfileBestResults = {
   'snug-raw': BestServerResult | null
   'snug-opt': BestServerResult | null
 }
+
+
+export type ValidationSuiteId =
+  | 'full-release'
+  | 'go-test'
+  | 'go-race'
+  | 'go-vet'
+  | 'resp-fuzz'
+  | 'redis82-differential'
+  | 'cli-command-matrix'
+  | 'durability'
+  | 'cluster-recovery'
+  | 'cluster-corrupt-replica'
+  | 'cluster-persistence-failure'
+  | 'full-soak'
+  | 'distributed-soak'
+  | 'mixed-soak'
+
+export type ValidationSuite = {
+  id: ValidationSuiteId
+  label: string
+  description: string
+  category: 'release' | 'cli' | 'soak'
+  destructive?: boolean
+  configurable?: boolean
+  defaultDurationSeconds?: number
+}
+
+export type ValidationOptions = {
+  durationSeconds: number
+  caseTimeoutSeconds: number
+  keys: number
+  workers: number
+  valueBytes: number
+  seed: number
+}
+
+export type ValidationJob = {
+  id: string
+  suiteId: ValidationSuiteId
+  suiteLabel: string
+  status: 'running' | 'done' | 'failed' | 'cancelled'
+  command: string
+  log: string
+  startedAt: string
+  finishedAt?: string
+  exitCode?: number
+  error?: string
+  options: ValidationOptions
+}
+
+
+export type DbKeySummary = {
+  key: string
+  type: string
+}
+
+export type DbKeyDetails = {
+  key: string
+  type: string
+  ttl: number
+  length?: number
+  encoding?: string
+  memoryBytes?: number
+  value: unknown
+  command: string
+}
+
+export type DbListResult = {
+  keys: DbKeySummary[]
+  command: string
+}
+
+
+export type DbMutation =
+  | { action: 'hash-set'; key: string; field: string; value: string }
+  | { action: 'hash-del'; key: string; field: string }
+  | { action: 'list-push'; key: string; side: 'left' | 'right'; value: string }
+  | { action: 'list-set'; key: string; index: number; value: string }
+  | { action: 'list-del-index'; key: string; index: number }
+  | { action: 'set-add'; key: string; value: string }
+  | { action: 'set-del'; key: string; value: string }
+  | { action: 'zset-set'; key: string; member: string; score: number }
+  | { action: 'zset-del'; key: string; member: string }
+  | { action: 'json-set-root'; key: string; value: string }
+
+export type DbBulkAction =
+  | { action: 'delete'; keys: string[] }
+  | { action: 'expire'; keys: string[]; seconds: number }
+  | { action: 'persist'; keys: string[] }
+
+export type DbCommandAction =
+  | { action: 'get'; key: string }
+  | { action: 'type'; key: string }
+  | { action: 'ttl'; key: string }
+  | { action: 'exists'; key: string }
+  | { action: 'incr'; key: string; amount: number }
+  | { action: 'set'; key: string; value: string }
+  | { action: 'delete'; key: string }
+  | { action: 'expire'; key: string; seconds: number }
+  | { action: 'hget'; key: string; field: string }
+  | { action: 'hset'; key: string; field: string; value: string }
+  | { action: 'lpush'; key: string; value: string }
+  | { action: 'rpush'; key: string; value: string }
+  | { action: 'sadd'; key: string; value: string }
+  | { action: 'zadd'; key: string; member: string; score: number }

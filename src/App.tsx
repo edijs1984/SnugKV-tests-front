@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
+import ValidationLab from './ValidationLab'
+import DatabaseBrowser from './DatabaseBrowser'
+import Playground from './Playground'
+import BenchmarkMatrix from './BenchmarkMatrix'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -11,7 +15,19 @@ const profiles = [
   ['repetitive', 'Compressible control · 256 B'],
   ['compressed', 'Already-compressed control · 256 B'],
   ['random', 'Incompressible control · 256 B'],
-]
+  ['hash-small', 'Hash · 10 fields/key · 64 B values'],
+  ['hash-medium', 'Hash · 100 fields/key · 64 B values'],
+  ['hash-large', 'Hash · 1000 fields/key · 64 B values'],
+  ['list-small', 'List · 10 items/key · 64 B values'],
+  ['list-medium', 'List · 100 items/key · 64 B values'],
+  ['list-large', 'List · 1000 items/key · 64 B values'],
+  ['set-small', 'Set · 10 members/key'],
+  ['set-medium', 'Set · 100 members/key'],
+  ['set-large', 'Set · 1000 members/key'],
+  ['zset-small', 'Sorted set · 10 members/key'],
+  ['zset-medium', 'Sorted set · 100 members/key'],
+  ['zset-large', 'Sorted set · 1000 members/key'],
+] as const
 
 const initial: BenchmarkConfig = {
   profile: 'uuid',
@@ -33,9 +49,11 @@ const us = (ns: number) => `${(ns / 1000).toFixed(2)} μs`
 const bytes = (n: number) => nf.format(Math.round(n))
 
 function App() {
+  const [activeTab, setActiveTab] = useState<'benchmark' | 'playground' | 'database' | 'validation'>('benchmark')
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
+  const [matrixBusy, setMatrixBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
   const [serverBusy, setServerBusy] = useState(false)
@@ -171,9 +189,9 @@ function App() {
       if (!result) {
         lines.push('  no recorded result')
       } else {
-        lines.push(`  best SET/s: ${Math.round(result.bestSet)}`)
-        lines.push(`  best GET/s: ${Math.round(result.bestGet)}`)
-        lines.push(`  lowest bytes/key: ${Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : 'n/a'}`)
+        lines.push(`  best WRITE/s: ${Math.round(result.bestSet)}`)
+        lines.push(`  best READ/s: ${Math.round(result.bestGet)}`)
+        lines.push(`  lowest bytes/unit: ${Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : 'n/a'}`)
         lines.push(`  runs: ${result.runs}`)
       }
       lines.push('')
@@ -234,15 +252,43 @@ function App() {
             <span>S</span><span>k</span><span>v</span>
           </div>
           <div className="brand-divider" />
-          <div className="brand-subtitle">Benchmark Lab</div>
+          <div className="brand-subtitle">SnugKV Desktop Studio</div>
         </div>
 
-        <div className={`app-status ${job?.status ?? 'idle'}`}>
+        <nav className="top-tabs" aria-label="Workspace">
+          <button
+            className={activeTab === 'benchmark' ? 'active' : ''}
+            onClick={() => setActiveTab('benchmark')}
+          >
+            Benchmark
+          </button>
+          <button
+            className={activeTab === 'playground' ? 'active' : ''}
+            onClick={() => setActiveTab('playground')}
+          >
+            Playground
+          </button>
+          <button
+            className={activeTab === 'database' ? 'active' : ''}
+            onClick={() => setActiveTab('database')}
+          >
+            Database
+          </button>
+          <button
+            className={activeTab === 'validation' ? 'active' : ''}
+            onClick={() => setActiveTab('validation')}
+          >
+            Tests & Soak
+          </button>
+        </nav>
+
+        <div className={`app-status ${activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'idle'}`}>
           <span className="status-dot" />
-          <span>{job?.status ?? 'idle'}</span>
+          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : activeTab === 'playground' || activeTab === 'database' ? (serverStatus.running ? 'connected' : 'offline') : 'validation'}</span>
         </div>
       </header>
 
+      {activeTab === 'benchmark' ? (
       <section className="workspace">
         <div className="main-area">
           <div className="server-strip">
@@ -255,7 +301,7 @@ function App() {
                 <button
                   key={kind}
                   className={activeMode === kind ? 'server-choice active' : 'server-choice'}
-                  disabled={serverBusy || busy}
+                  disabled={serverBusy || busy || matrixBusy}
                   onClick={() => startServer(kind)}
                 >
                   {label}
@@ -268,7 +314,7 @@ function App() {
               {serverStatus.running && (
                 <button
                   className="mode-pill"
-                  disabled={serverBusy || busy}
+                  disabled={serverBusy || busy || matrixBusy}
                   onClick={stopServer}
                   title="Stop server"
                 >
@@ -320,7 +366,7 @@ function App() {
                       key={mode}
                       type="button"
                       className={(config.optimizerMode ?? 'dedicated') === mode ? 'active' : ''}
-                      disabled={busy || serverBusy}
+                      disabled={busy || serverBusy || matrixBusy}
                       onClick={() => field('optimizerMode', mode)}
                     >
                       {mode === 'dedicated' ? 'Dedicated' : 'Sidecar'}
@@ -357,7 +403,7 @@ function App() {
               <details className="advanced-box">
                 <summary>Advanced</summary>
                 <div className="advanced-grid">
-                  <label><span>GET ops</span><input type="number" value={config.getOps} onChange={e => field('getOps', +e.target.value)} /></label>
+                  <label><span>Read ops</span><input type="number" value={config.getOps} onChange={e => field('getOps', +e.target.value)} /></label>
                   <label><span>Settle ms</span><input type="number" value={config.settleMs} onChange={e => field('settleMs', +e.target.value)} /></label>
                   <label><span>Seed</span><input type="number" value={config.seed} onChange={e => field('seed', +e.target.value)} /></label>
                   <label><span>Host</span><input value={config.host} onChange={e => field('host', e.target.value)} /></label>
@@ -368,7 +414,7 @@ function App() {
               </details>
 
               <div className="run-actions">
-                <button className="primary-run" disabled={busy || !serverStatus.running} onClick={run}>
+                <button className="primary-run" disabled={busy || matrixBusy || !serverStatus.running} onClick={run}>
                   <span className="play-icon">▶</span>
                   {busy ? 'Benchmark running…' : 'Run benchmark'}
                 </button>
@@ -433,12 +479,12 @@ function App() {
 
               <div className="metric-row">
                 <article className="metric-tile">
-                  <span>SET</span>
+                  <span>WRITE</span>
                   <strong>{r ? nf.format(Math.round(r.load.ops_per_second)) : '—'}</strong>
                   <small>ops/s{r ? ` · p95 ${us(r.load.p95_ns)}` : ''}</small>
                 </article>
                 <article className="metric-tile">
-                  <span>GET</span>
+                  <span>READ</span>
                   <strong>{r ? nf.format(Math.round(r.get.ops_per_second)) : '—'}</strong>
                   <small>ops/s{r ? ` · p95 ${us(r.get.p95_ns)}` : ''}</small>
                 </article>
@@ -454,19 +500,26 @@ function App() {
                   </small>
                 </article>
                 <article className="metric-tile">
-                  <span>Bytes/key</span>
+                  <span>Bytes/unit</span>
                   <strong>{r ? r.load.bytes_per_key_delta.toFixed(2) : '—'}</strong>
                   <small>
                     {r
                       ? r.load.bytes_per_key_post_workload !== undefined
                         ? `final · hot ${r.load.bytes_per_key_post_workload.toFixed(2)} B${r.load.converge_ms ? ` · ${r.load.converged ? 'converged' : 'timeout'}` : ''}`
-                        : 'B/key'
-                      : 'B/key'}
+                        : 'B/unit'
+                      : 'B/unit'}
                   </small>
                 </article>
               </div>
             </section>
           </div>
+
+          <BenchmarkMatrix
+            profiles={profiles}
+            baseConfig={config}
+            disabled={busy || serverBusy || matrixBusy}
+            onRunningChange={setMatrixBusy}
+          />
         </div>
 
         <aside className="best-sidebar">
@@ -501,9 +554,9 @@ function App() {
                   </div>
                   {result ? (
                     <dl>
-                      <div><dt>Best SET</dt><dd>{nf.format(Math.round(result.bestSet))} /s</dd></div>
-                      <div><dt>Best GET</dt><dd>{nf.format(Math.round(result.bestGet))} /s</dd></div>
-                      <div><dt>Lowest B/key</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'} B</dd></div>
+                      <div><dt>Best WRITE</dt><dd>{nf.format(Math.round(result.bestSet))} /s</dd></div>
+                      <div><dt>Best READ</dt><dd>{nf.format(Math.round(result.bestGet))} /s</dd></div>
+                      <div><dt>Lowest B/unit</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'} B</dd></div>
                       <div><dt>Runs</dt><dd>{result.runs}</dd></div>
                     </dl>
                   ) : (
@@ -515,6 +568,13 @@ function App() {
           </div>
         </aside>
       </section>
+      ) : activeTab === 'playground' ? (
+        <Playground serverStatus={serverStatus} />
+      ) : activeTab === 'database' ? (
+        <DatabaseBrowser serverStatus={serverStatus} />
+      ) : (
+        <ValidationLab />
+      )}
 
       <footer className="app-footer">
         <div><span>Skv</span><span>v0.1.7</span></div>

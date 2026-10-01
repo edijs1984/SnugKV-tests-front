@@ -9,11 +9,122 @@ const net = require('node:net')
 const profiles = new Set([
   'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
   'text', 'repetitive', 'compressed', 'random',
+  'hash-small', 'hash-medium', 'hash-large',
+  'list-small', 'list-medium', 'list-large',
+  'set-small', 'set-medium', 'set-large',
+  'zset-small', 'zset-medium', 'zset-large',
 ])
 
 let mainWindow
 let activeChild = null
+let activeValidation = null
+let activeValidationCancelled = false
 let activeServer = null
+
+
+const validationSuites = [
+  {
+    id: 'full-release',
+    label: 'Full Release Validation',
+    description: 'Full Go tests, race detector, vet, RESP fuzz, Redis 8.2 differential, durability and cluster recovery.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'go-test',
+    label: 'Go Test',
+    description: 'Run the complete Go test suite once.',
+    category: 'release',
+  },
+  {
+    id: 'go-race',
+    label: 'Race Detector',
+    description: 'Run the complete Go test suite with the race detector.',
+    category: 'release',
+  },
+  {
+    id: 'go-vet',
+    label: 'Go Vet',
+    description: 'Static analysis across all Go packages.',
+    category: 'release',
+  },
+  {
+    id: 'resp-fuzz',
+    label: 'RESP Fuzz',
+    description: 'Fuzz the RESP command decoder for 60 seconds.',
+    category: 'release',
+  },
+  {
+    id: 'redis82-differential',
+    label: 'Redis 8.2 Differential',
+    description: 'Cross-restore, Function RDB, MIGRATE and RESP3 client compatibility against Redis 8.2.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'durability',
+    label: 'Durability Matrix',
+    description: 'AOF, snapshots, rewrite, restart, replication persistence and durability fuzz gates.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cluster-recovery',
+    label: 'Cluster Recovery Matrix',
+    description: 'Run all retained cluster restart, partition, failover, migration and corruption recovery cases.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cluster-corrupt-replica',
+    label: 'Corrupt Replica Recovery',
+    description: 'Corrupt replica AOF, require fail-closed behavior, rebuild from primary and verify restart.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cluster-persistence-failure',
+    label: 'Persistence Failure Recovery',
+    description: 'Force AOF rewrite failure, verify live durability, recover rewrite and hard-restart.',
+    category: 'release',
+    destructive: true,
+  },
+  {
+    id: 'cli-command-matrix',
+    label: 'CLI Command Matrix',
+    description: 'End-to-end redis-cli coverage for core commands plus feature-aware JSON, search, functions, persistence and cluster commands.',
+    category: 'cli',
+    destructive: true,
+  },
+  {
+    id: 'full-soak',
+    label: 'Full Soak',
+    description: 'Run mixed workload soak followed by the distributed cluster chaos soak for the selected duration.',
+    category: 'soak',
+    destructive: true,
+    configurable: true,
+    defaultDurationSeconds: 600,
+  },
+  {
+    id: 'distributed-soak',
+    label: 'Distributed Chaos Soak',
+    description: 'Repeated rebalance, restart, failover, recovery, partition, persistence and corruption chaos cases.',
+    category: 'soak',
+    destructive: true,
+    configurable: true,
+    defaultDurationSeconds: 600,
+  },
+  {
+    id: 'mixed-soak',
+    label: 'Mixed Workload Soak',
+    description: 'Long-running in-process correctness, TTL churn, optimizer and memory-growth workload.',
+    category: 'soak',
+    configurable: true,
+    defaultDurationSeconds: 600,
+  },
+]
+
+const validationSuiteIds = new Set(validationSuites.map(suite => suite.id))
 
 const serverDefs = {
   redis: {
@@ -129,6 +240,57 @@ function redisServerPath() {
   return firstExecutable([executableFromPath('redis-server'), '/usr/bin/redis-server', '/usr/local/bin/redis-server', 'redis-server'])
 }
 
+function redisCliPath() {
+  return firstExecutable([executableFromPath('redis-cli'), '/usr/bin/redis-cli', '/usr/local/bin/redis-cli', 'redis-cli'])
+}
+
+function requireActiveDbServer() {
+  if (!activeServer?.port) throw new Error('Start a local Redis or SnugKV server first')
+  return { host: '127.0.0.1', port: activeServer.port }
+}
+
+function cleanDbText(value, max = 4096) {
+  return String(value ?? '').slice(0, max)
+}
+
+function shellDisplayArg(value) {
+  const text = String(value)
+  if (/^[a-zA-Z0-9_:.*/@+-]+$/.test(text)) return text
+  return "'" + text.replace(/'/g, "'\\''") + "'"
+}
+
+function dbCommandDisplay(args) {
+  const db = requireActiveDbServer()
+  return ['redis-cli', '-h', db.host, '-p', String(db.port), ...args].map(shellDisplayArg).join(' ')
+}
+
+function runDbCli(args, options = {}) {
+  const db = requireActiveDbServer()
+  const result = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port), ...args.map(String)], {
+    env: runtimeEnv(),
+    encoding: 'utf8',
+    timeout: options.timeout ?? 8000,
+    maxBuffer: 8 * 1024 * 1024,
+  })
+  if (result.error) throw result.error
+  const stdout = String(result.stdout || '').replace(/\r/g, '').replace(/\n$/, '')
+  const stderr = String(result.stderr || '').trim()
+  if (result.status !== 0) throw new Error(stderr || stdout || `redis-cli exited with code ${result.status}`)
+  if (stdout.startsWith('ERR ')) throw new Error(stdout)
+  return stdout
+}
+
+function dbLines(output) {
+  if (!output) return []
+  return String(output).split('\n')
+}
+
+function dbPairs(lines) {
+  const result = []
+  for (let i = 0; i < lines.length; i += 2) result.push({ field: lines[i], value: lines[i + 1] ?? '' })
+  return result
+}
+
 function fuserPath() {
   return firstExecutable([executableFromPath('fuser'), '/usr/bin/fuser', '/bin/fuser', 'fuser'])
 }
@@ -156,6 +318,95 @@ function sanitize(body = {}) {
     seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
     optimizerMode: body.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated',
   }
+}
+
+
+function sanitizeValidationOptions(body = {}) {
+  return {
+    durationSeconds: positiveInt(body.durationSeconds, 600, 7 * 24 * 60 * 60),
+    caseTimeoutSeconds: positiveInt(body.caseTimeoutSeconds, 480, 3600),
+    keys: positiveInt(body.keys, 100000, 100000000),
+    workers: positiveInt(body.workers, 4, 256),
+    valueBytes: positiveInt(body.valueBytes, 512, 1024 * 1024),
+    seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
+  }
+}
+
+function emitValidation(job) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('validation:update', job)
+  }
+}
+
+function validationCommand(suiteId, options) {
+  switch (suiteId) {
+    case 'go-test':
+      return 'go test ./... -count=1'
+    case 'go-race':
+      return 'go test -race ./... -count=1'
+    case 'go-vet':
+      return 'go vet ./...'
+    case 'resp-fuzz':
+      return "go test ./internal/resp -run=^$ -fuzz=FuzzReadCommand -fuzztime=60s"
+    case 'redis82-differential':
+      return 'bash scripts/release/run-redis82-differential-gates.sh'
+    case 'cli-command-matrix':
+      return `SNUGKV_REPO=${JSON.stringify(snugRepo())} bash ${JSON.stringify(join(__dirname, '..', 'scripts', 'run-cli-command-matrix.sh'))}`
+    case 'durability':
+      return 'bash scripts/release/run-durability-gates.sh'
+    case 'cluster-recovery':
+      return 'bash scripts/cluster-recovery-matrix.sh'
+    case 'cluster-corrupt-replica':
+      return 'bash scripts/cluster-chaos-corrupt-replica.sh'
+    case 'cluster-persistence-failure':
+      return 'bash scripts/cluster-chaos-persistence-failure.sh'
+    case 'full-soak':
+      return [
+        'go run -buildvcs=false ./cmd/snugsoak',
+        `-duration ${options.durationSeconds}s`,
+        `-keys ${options.keys}`,
+        `-workers ${options.workers}`,
+        `-bytes ${options.valueBytes}`,
+        `-seed ${options.seed}`,
+        '&& bash scripts/cluster-distributed-soak.sh',
+      ].join(' ')
+    case 'distributed-soak':
+      return 'bash scripts/cluster-distributed-soak.sh'
+    case 'mixed-soak':
+      return [
+        'go run -buildvcs=false ./cmd/snugsoak',
+        `-duration ${options.durationSeconds}s`,
+        `-keys ${options.keys}`,
+        `-workers ${options.workers}`,
+        `-bytes ${options.valueBytes}`,
+        `-seed ${options.seed}`,
+      ].join(' ')
+    case 'full-release':
+      return [
+        'go test ./... -count=1',
+        'go test -race ./... -count=1',
+        'go vet ./...',
+        "go test ./internal/resp -run=^$ -fuzz=FuzzReadCommand -fuzztime=60s",
+        'bash scripts/release/run-redis82-differential-gates.sh',
+        'bash scripts/release/run-durability-gates.sh',
+        'bash scripts/cluster-recovery-matrix.sh',
+      ].join(' && ')
+    default:
+      throw new Error(`Unknown validation suite: ${suiteId}`)
+  }
+}
+
+function stopProcessTree(child) {
+  if (!child || child.killed) return
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGTERM')
+      return
+    } catch {
+      // Fall through to the direct child when the process group is already gone.
+    }
+  }
+  child.kill('SIGTERM')
 }
 
 function emit(job) {
@@ -401,6 +652,7 @@ async function buildSnugBinary() {
 
 async function startManagedServer(request) {
   if (activeChild) throw new Error('Cannot switch database server while a benchmark is running')
+  if (activeValidation) throw new Error('Cannot switch database server while validation is running')
   const kind = typeof request === 'string' ? request : request?.kind
   const optimizerMode = request?.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated'
   const def = serverDefs[kind]
@@ -499,6 +751,7 @@ async function startManagedServer(request) {
 ipcMain.handle('server:start', async (_event, request) => startManagedServer(request))
 ipcMain.handle('server:stop', async () => {
   if (activeChild) throw new Error('Cannot stop database server while a benchmark is running')
+  if (activeValidation) throw new Error('Cannot stop database server while validation is running')
   await killBenchmarkPorts()
   const status = { running: false }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('server:update', status)
@@ -513,6 +766,268 @@ ipcMain.handle('server:status', () => {
     label: activeServer.label,
     optimizerMode: activeServer.optimizerMode,
   }
+})
+
+
+ipcMain.handle('db:list-keys', (_event, request = {}) => {
+  const db = requireActiveDbServer()
+  const pattern = cleanDbText(request.pattern || '*', 256) || '*'
+  const count = positiveInt(request.count, 200, 500)
+
+  // Do one bounded SCAN page instead of redis-cli --scan. The latter walks the
+  // entire keyspace before returning and can easily time out on large databases.
+  const output = runDbCli(['SCAN', '0', 'MATCH', pattern, 'COUNT', String(count)], { timeout: 5000 })
+  const lines = dbLines(output).filter(line => line !== '')
+  const cursor = lines.shift() || '0'
+  const names = lines.slice(0, count)
+
+  // Do not spawn one redis-cli process per key just to obtain TYPE. Exact type
+  // is fetched by db:get-key when a key is opened.
+  const keys = names.map(key => ({ key, type: 'unknown' }))
+
+  return {
+    keys,
+    cursor,
+    command: dbCommandDisplay(['SCAN', '0', 'MATCH', pattern, 'COUNT', String(count)]),
+  }
+})
+
+ipcMain.handle('db:get-key', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+
+  const type = runDbCli(['TYPE', key])
+  if (!type || type === 'none') throw new Error('Key no longer exists')
+  const ttl = Number(runDbCli(['TTL', key]))
+  let value
+  let length
+  let command = dbCommandDisplay(['TYPE', key])
+
+  if (type === 'string') {
+    value = runDbCli(['GET', key])
+    length = Number(runDbCli(['STRLEN', key]))
+    command = dbCommandDisplay(['GET', key])
+  } else if (type === 'hash') {
+    const lines = dbLines(runDbCli(['HGETALL', key]))
+    value = dbPairs(lines)
+    length = Number(runDbCli(['HLEN', key]))
+    command = dbCommandDisplay(['HGETALL', key])
+  } else if (type === 'list') {
+    value = dbLines(runDbCli(['LRANGE', key, '0', '-1']))
+    length = Number(runDbCli(['LLEN', key]))
+    command = dbCommandDisplay(['LRANGE', key, '0', '-1'])
+  } else if (type === 'set') {
+    value = dbLines(runDbCli(['SMEMBERS', key]))
+    length = Number(runDbCli(['SCARD', key]))
+    command = dbCommandDisplay(['SMEMBERS', key])
+  } else if (type === 'zset') {
+    const lines = dbLines(runDbCli(['ZRANGE', key, '0', '-1', 'WITHSCORES']))
+    value = []
+    for (let i = 0; i < lines.length; i += 2) value.push({ member: lines[i], score: lines[i + 1] ?? '' })
+    length = Number(runDbCli(['ZCARD', key]))
+    command = dbCommandDisplay(['ZRANGE', key, '0', '-1', 'WITHSCORES'])
+  } else if (type.toLowerCase().includes('json') || type === 'ReJSON-RL') {
+    const raw = runDbCli(['JSON.GET', key, '$'])
+    try { value = JSON.parse(raw) } catch { value = raw }
+    command = dbCommandDisplay(['JSON.GET', key, '$'])
+  } else {
+    try {
+      value = runDbCli(['GET', key])
+      command = dbCommandDisplay(['GET', key])
+    } catch {
+      value = `Preview is not implemented for type: ${type}`
+    }
+  }
+
+  let encoding
+  let memoryBytes
+  try { encoding = runDbCli(['OBJECT', 'ENCODING', key]) || undefined } catch {}
+  try {
+    const rawMemory = Number(runDbCli(['MEMORY', 'USAGE', key]))
+    if (Number.isFinite(rawMemory)) memoryBytes = rawMemory
+  } catch {}
+
+  return {
+    key,
+    type,
+    ttl: Number.isFinite(ttl) ? ttl : -1,
+    length,
+    encoding,
+    memoryBytes,
+    value,
+    command,
+  }
+})
+
+ipcMain.handle('db:set-string', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  const value = cleanDbText(request.value, 8 * 1024 * 1024)
+  if (!key) throw new Error('Key is required')
+  runDbCli(['SET', key, value])
+  return { ok: true, command: dbCommandDisplay(['SET', key, value]) }
+})
+
+ipcMain.handle('db:set-ttl', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+  if (request.seconds === null || request.seconds === undefined || request.seconds === '') {
+    runDbCli(['PERSIST', key])
+    return { ok: true, command: dbCommandDisplay(['PERSIST', key]) }
+  }
+  const seconds = positiveInt(request.seconds, 60, 365 * 24 * 60 * 60)
+  runDbCli(['EXPIRE', key, String(seconds)])
+  return { ok: true, command: dbCommandDisplay(['EXPIRE', key, String(seconds)]) }
+})
+
+ipcMain.handle('db:delete-key', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+  runDbCli(['DEL', key])
+  return { ok: true, command: dbCommandDisplay(['DEL', key]) }
+})
+
+ipcMain.handle('db:create-example', (_event, request = {}) => {
+  const key = cleanDbText(request.key, 4096)
+  const kind = String(request.kind || '')
+  if (!key) throw new Error('Key is required')
+  if (!['string', 'hash', 'list', 'set', 'zset', 'json'].includes(kind)) throw new Error('Unsupported example type')
+
+  runDbCli(['DEL', key])
+  let args
+  if (kind === 'string') args = ['SET', key, 'Hello from SnugKV']
+  if (kind === 'hash') args = ['HSET', key, 'name', 'Ada', 'role', 'engineer', 'active', 'true']
+  if (kind === 'list') args = ['RPUSH', key, 'queued', 'processing', 'done']
+  if (kind === 'set') args = ['SADD', key, 'redis', 'snugkv', 'database']
+  if (kind === 'zset') args = ['ZADD', key, '1200', 'alice', '950', 'bob', '740', 'carol']
+  if (kind === 'json') args = ['JSON.SET', key, '$', JSON.stringify({ name: 'Ada', role: 'engineer', skills: ['Go', 'TypeScript'], active: true })]
+
+  runDbCli(args)
+  return { ok: true, command: dbCommandDisplay(args) }
+})
+
+ipcMain.handle('db:mutate', (_event, request = {}) => {
+  const action = String(request.action || '')
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+
+  let args
+  if (action === 'hash-set') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HSET', key, field, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'hash-del') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HDEL', key, field]
+  } else if (action === 'list-push') {
+    args = [request.side === 'left' ? 'LPUSH' : 'RPUSH', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'list-set') {
+    const index = Number(request.index)
+    if (!Number.isInteger(index)) throw new Error('List index must be an integer')
+    args = ['LSET', key, String(index), cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'list-del-index') {
+    const index = Number(request.index)
+    if (!Number.isInteger(index)) throw new Error('List index must be an integer')
+    const marker = `__snugkv_delete_${randomUUID()}__`
+    runDbCli(['LSET', key, String(index), marker])
+    runDbCli(['LREM', key, '1', marker])
+    return { ok: true, command: dbCommandDisplay(['LREM', key, '1', marker]) }
+  } else if (action === 'set-add') {
+    args = ['SADD', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'set-del') {
+    args = ['SREM', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'zset-set') {
+    const score = Number(request.score)
+    if (!Number.isFinite(score)) throw new Error('Score must be a number')
+    const member = cleanDbText(request.member, 8 * 1024 * 1024)
+    if (!member) throw new Error('Member is required')
+    args = ['ZADD', key, String(score), member]
+  } else if (action === 'zset-del') {
+    const member = cleanDbText(request.member, 8 * 1024 * 1024)
+    if (!member) throw new Error('Member is required')
+    args = ['ZREM', key, member]
+  } else if (action === 'json-set-root') {
+    const raw = cleanDbText(request.value, 8 * 1024 * 1024)
+    try { JSON.parse(raw) } catch { throw new Error('JSON value is invalid') }
+    args = ['JSON.SET', key, '$', raw]
+  } else {
+    throw new Error('Unsupported database mutation')
+  }
+
+  runDbCli(args)
+  return { ok: true, command: dbCommandDisplay(args) }
+})
+
+ipcMain.handle('db:bulk', (_event, request = {}) => {
+  const action = String(request.action || '')
+  const keys = Array.isArray(request.keys)
+    ? request.keys.map(key => cleanDbText(key, 4096)).filter(Boolean).slice(0, 500)
+    : []
+  if (!keys.length) throw new Error('Select at least one key')
+
+  let affected = 0
+  let command = ''
+  if (action === 'delete') {
+    for (const key of keys) affected += Number(runDbCli(['DEL', key])) || 0
+    command = dbCommandDisplay(['DEL', ...keys])
+  } else if (action === 'expire') {
+    const seconds = positiveInt(request.seconds, 60, 365 * 24 * 60 * 60)
+    for (const key of keys) affected += Number(runDbCli(['EXPIRE', key, String(seconds)])) || 0
+    command = dbCommandDisplay(['EXPIRE', '<each selected key>', String(seconds)])
+  } else if (action === 'persist') {
+    for (const key of keys) affected += Number(runDbCli(['PERSIST', key])) || 0
+    command = dbCommandDisplay(['PERSIST', '<each selected key>'])
+  } else {
+    throw new Error('Unsupported bulk action')
+  }
+  return { ok: true, command, affected }
+})
+
+ipcMain.handle('db:command', (_event, request = {}) => {
+  const action = String(request.action || '')
+  const key = cleanDbText(request.key, 4096)
+  if (!key) throw new Error('Key is required')
+
+  let args
+  if (action === 'get') args = ['GET', key]
+  else if (action === 'type') args = ['TYPE', key]
+  else if (action === 'ttl') args = ['TTL', key]
+  else if (action === 'exists') args = ['EXISTS', key]
+  else if (action === 'incr') {
+    const amount = Number(request.amount)
+    if (!Number.isSafeInteger(amount)) throw new Error('Increment must be an integer')
+    args = amount === 1 ? ['INCR', key] : ['INCRBY', key, String(amount)]
+  } else if (action === 'set') {
+    args = ['SET', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'delete') {
+    args = ['DEL', key]
+  } else if (action === 'expire') {
+    const seconds = positiveInt(request.seconds, 60, 365 * 24 * 60 * 60)
+    args = ['EXPIRE', key, String(seconds)]
+  } else if (action === 'hget') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HGET', key, field]
+  } else if (action === 'hset') {
+    const field = cleanDbText(request.field, 4096)
+    if (!field) throw new Error('Field is required')
+    args = ['HSET', key, field, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'lpush' || action === 'rpush') {
+    args = [action === 'lpush' ? 'LPUSH' : 'RPUSH', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'sadd') {
+    args = ['SADD', key, cleanDbText(request.value, 8 * 1024 * 1024)]
+  } else if (action === 'zadd') {
+    const member = cleanDbText(request.member, 8 * 1024 * 1024)
+    if (!member) throw new Error('Member is required')
+    const score = Number(request.score)
+    if (!Number.isFinite(score)) throw new Error('Score must be a number')
+    args = ['ZADD', key, String(score), member]
+  } else {
+    throw new Error('Unsupported command builder action')
+  }
+
+  const result = runDbCli(args)
+  return { ok: true, command: dbCommandDisplay(args), result }
 })
 
 ipcMain.handle('history:get', (_event, profile) => {
@@ -542,6 +1057,99 @@ ipcMain.handle('history:reset', (_event, profile) => {
   return best
 })
 
+
+ipcMain.handle('validation:suites', () => validationSuites)
+
+ipcMain.handle('validation:start', async (_event, request = {}) => {
+  if (activeValidation) throw new Error('A validation suite is already running')
+  if (activeChild) throw new Error('Cannot start validation while a benchmark is running')
+
+  const suiteId = String(request.suiteId || '')
+  if (!validationSuiteIds.has(suiteId)) throw new Error('Unknown validation suite')
+
+  const suite = validationSuites.find(item => item.id === suiteId)
+  const options = sanitizeValidationOptions(request.options)
+
+  // Release/chaos suites own their local ports. Stop any server managed by the
+  // benchmark tab first so Redis 6390 / SnugKV ports cannot collide.
+  if (activeServer) await killBenchmarkPorts()
+
+  const command = validationCommand(suiteId, options)
+  const id = randomUUID()
+  const job = {
+    id,
+    suiteId,
+    suiteLabel: suite.label,
+    status: 'running',
+    command,
+    log: '',
+    startedAt: new Date().toISOString(),
+    options,
+  }
+
+  const env = {
+    ...runtimeEnv(),
+    SNUGKV_GO_BIN: goPath(),
+  }
+  if (suiteId === 'distributed-soak' || suiteId === 'full-soak') {
+    env.DURATION_SECONDS = String(options.durationSeconds)
+    env.CASE_TIMEOUT_SECONDS = String(options.caseTimeoutSeconds)
+    env.OUT = join(app.getPath('userData'), `validation-${id}.jsonl`)
+    env.LOG_DIR = join(app.getPath('userData'), `validation-${id}-logs`)
+  }
+
+  activeValidationCancelled = false
+  const child = spawn(bashPath(), ['-lc', command], {
+    cwd: snugRepo(),
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  activeValidation = child
+
+  const append = chunk => {
+    job.log += chunk.toString()
+    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
+    emitValidation(job)
+  }
+  child.stdout?.on('data', append)
+  child.stderr?.on('data', append)
+
+  child.once('error', error => {
+    job.status = 'failed'
+    job.error = error.message
+    job.finishedAt = new Date().toISOString()
+    activeValidation = null
+    emitValidation(job)
+  })
+
+  child.once('close', code => {
+    job.finishedAt = new Date().toISOString()
+    job.exitCode = Number.isInteger(code) ? code : undefined
+    if (job.status === 'running') {
+      if (activeValidationCancelled) {
+        job.status = 'cancelled'
+      } else {
+        job.status = code === 0 ? 'done' : 'failed'
+        if (code !== 0) job.error = `Validation exited with code ${code}`
+      }
+    }
+    activeValidation = null
+    activeValidationCancelled = false
+    emitValidation(job)
+  })
+
+  emitValidation(job)
+  return job
+})
+
+ipcMain.handle('validation:cancel', () => {
+  if (!activeValidation) return false
+  activeValidationCancelled = true
+  stopProcessTree(activeValidation)
+  return true
+})
+
 ipcMain.handle('bench:environment', () => ({
   snugkvRepo: snugRepo(),
   script: scriptPath(),
@@ -556,6 +1164,9 @@ ipcMain.handle('bench:environment', () => ({
 ipcMain.handle('bench:start', async (_event, rawConfig) => {
   if (activeChild) {
     throw new Error('A benchmark is already running')
+  }
+  if (activeValidation) {
+    throw new Error('Cannot start a benchmark while validation is running')
   }
 
   const script = scriptPath()
@@ -699,6 +1310,21 @@ ipcMain.handle('bench:save', async (_event, payload) => {
   return { saved: true, path: result.filePath }
 })
 
+ipcMain.handle('bench:save-text', async (_event, payload) => {
+  const type = payload?.type === 'csv' ? 'csv' : 'txt'
+  const suggested = payload?.filename || `snugkv-benchmark.${type}`
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save benchmark export',
+    defaultPath: suggested,
+    filters: type === 'csv'
+      ? [{ name: 'CSV', extensions: ['csv'] }]
+      : [{ name: 'Text', extensions: ['txt'] }],
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+  writeFileSync(result.filePath, String(payload?.data ?? ''))
+  return { saved: true, path: result.filePath }
+})
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -734,6 +1360,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   if (activeChild) activeChild.kill('SIGTERM')
+  if (activeValidation) stopProcessTree(activeValidation)
   if (activeServer?.child) activeServer.child.kill('SIGTERM')
 })
 
