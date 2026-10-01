@@ -64,6 +64,7 @@ function csvCell(value: unknown) {
 export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunningChange }: Props) {
   const [rows, setRows] = useState<MatrixRow[]>([])
   const [running, setRunning] = useState(false)
+  const [selectedServers, setSelectedServers] = useState<ServerKind[]>(['redis', 'snug-raw', 'snug-opt'])
   const [progress, setProgress] = useState({ current: 0, total: profiles.length * serverDefs.length, label: '' })
   const [copyState, setCopyState] = useState('')
   const cancelled = useRef(false)
@@ -81,19 +82,30 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
     })
   }
 
-  async function runMatrix() {
+  function toggleServer(server: ServerKind) {
     if (running) return
+    setSelectedServers(current =>
+      current.includes(server)
+        ? current.filter(item => item !== server)
+        : [...current, server],
+    )
+  }
+
+  async function runMatrix() {
+    if (running || selectedServers.length === 0) return
     cancelled.current = false
     setRows([])
     setRunning(true)
     onRunningChange?.(true)
     setCopyState('')
 
-    const total = profiles.length * serverDefs.length
+    const activeServers = serverDefs.filter(([server]) => selectedServers.includes(server))
+    const total = profiles.length * activeServers.length
+    setProgress({ current: 0, total, label: '' })
     let current = 0
 
     try {
-      for (const [server, serverLabel] of serverDefs) {
+      for (const [server, serverLabel] of activeServers) {
         if (cancelled.current) break
 
         let status
@@ -234,6 +246,9 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
           generatedAt: new Date().toISOString(),
           baseConfig,
           profiles: profiles.map(([id, label]) => ({ id, label })),
+          servers: serverDefs
+            .filter(([server]) => selectedServers.includes(server))
+            .map(([id, label]) => ({ id, label })),
           results: asJson(),
         },
       })
@@ -250,13 +265,40 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
     <section className="matrix-card">
       <div className="matrix-head">
         <div>
-          <span className="eyebrow">All profiles · all servers</span>
+          <span className="eyebrow">All profiles · selected servers</span>
           <h3>Full benchmark matrix</h3>
-          <p>Runs {profiles.length} profiles × 3 servers sequentially using the current keys, workers, pipeline and advanced settings.</p>
+          <p>
+            Runs {profiles.length} profiles × {selectedServers.length} selected server{selectedServers.length === 1 ? '' : 's'}
+            {' '}({profiles.length * selectedServers.length} runs) sequentially using the current keys, workers, pipeline and advanced settings.
+          </p>
+          <div className="server-switches matrix-server-switches" aria-label="Matrix servers">
+            {serverDefs.map(([server, label]) => {
+              const selected = selectedServers.includes(server)
+              return (
+                <button
+                  key={server}
+                  type="button"
+                  className={selected ? 'server-choice active' : 'server-choice'}
+                  disabled={running || disabled}
+                  aria-pressed={selected}
+                  onClick={() => toggleServer(server)}
+                >
+                  {selected ? '✓ ' : ''}{label}
+                </button>
+              )
+            })}
+          </div>
+          {selectedServers.length === 0 && (
+            <small className="inline-error">Select at least one server to run the matrix.</small>
+          )}
         </div>
         <div className="matrix-primary-actions">
           {!running ? (
-            <button className="primary-run" disabled={disabled} onClick={runMatrix}>▶ Run full matrix</button>
+            <button className="primary-run" disabled={disabled || selectedServers.length === 0} onClick={runMatrix}>
+              ▶ Run {selectedServers.length === 1
+                ? serverDefs.find(([server]) => server === selectedServers[0])?.[1]
+                : 'selected matrix'}
+            </button>
           ) : (
             <button className="secondary-stop" onClick={cancelMatrix}>Cancel matrix</button>
           )}
