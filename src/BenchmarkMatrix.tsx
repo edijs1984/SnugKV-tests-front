@@ -177,7 +177,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
   }
 
   function asCsv() {
-    const header = ['profile','server','status','set_ops_s','get_ops_s','set_p95_us','get_p95_us','final_memory_bytes','final_bytes_per_key','hot_bytes_per_key','error']
+    const header = ['profile','server','status','write_ops_s','read_ops_s','write_p95_us','read_p95_us','final_memory_bytes','final_bytes_per_key','hot_bytes_per_key','error']
     const lines = [header.join(',')]
     for (const row of rows) {
       const load = row.job?.results?.load
@@ -201,7 +201,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
 
   function asMarkdown() {
     const lines = [
-      '| Profile | Server | SET/s | GET/s | SET p95 | GET p95 | Final memory | Final B/key | Hot B/key |',
+      '| Profile | Server | WRITE/s | READ/s | WRITE p95 | READ p95 | Final memory | Final B/unit | Hot B/unit |',
       '|---|---|---:|---:|---:|---:|---:|---:|---:|',
     ]
     for (const row of rows) {
@@ -278,7 +278,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
 
           <div className="matrix-table-wrap">
             <table className="matrix-table">
-              <thead><tr><th>Profile</th><th>Server</th><th>Status</th><th>SET/s</th><th>GET/s</th><th>p95 SET</th><th>p95 GET</th><th>Final memory</th><th>Final B/key</th><th>Hot B/key</th></tr></thead>
+              <thead><tr><th>Profile</th><th>Server</th><th>Status</th><th>WRITE/s</th><th>READ/s</th><th>p95 WRITE</th><th>p95 READ</th><th>Final memory</th><th>Final B/key</th><th>Hot B/key</th></tr></thead>
               <tbody>
                 {rows.map(row => {
                   const load = row.job?.results?.load
