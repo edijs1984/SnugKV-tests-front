@@ -3,6 +3,7 @@ import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './t
 import ValidationLab from './ValidationLab'
 import DatabaseBrowser from './DatabaseBrowser'
 import Playground from './Playground'
+import BenchmarkMatrix from './BenchmarkMatrix'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -40,6 +41,7 @@ function App() {
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
+  const [matrixBusy, setMatrixBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false })
   const [serverBusy, setServerBusy] = useState(false)
@@ -287,7 +289,7 @@ function App() {
                 <button
                   key={kind}
                   className={activeMode === kind ? 'server-choice active' : 'server-choice'}
-                  disabled={serverBusy || busy}
+                  disabled={serverBusy || busy || matrixBusy}
                   onClick={() => startServer(kind)}
                 >
                   {label}
@@ -300,7 +302,7 @@ function App() {
               {serverStatus.running && (
                 <button
                   className="mode-pill"
-                  disabled={serverBusy || busy}
+                  disabled={serverBusy || busy || matrixBusy}
                   onClick={stopServer}
                   title="Stop server"
                 >
@@ -352,7 +354,7 @@ function App() {
                       key={mode}
                       type="button"
                       className={(config.optimizerMode ?? 'dedicated') === mode ? 'active' : ''}
-                      disabled={busy || serverBusy}
+                      disabled={busy || serverBusy || matrixBusy}
                       onClick={() => field('optimizerMode', mode)}
                     >
                       {mode === 'dedicated' ? 'Dedicated' : 'Sidecar'}
@@ -400,7 +402,7 @@ function App() {
               </details>
 
               <div className="run-actions">
-                <button className="primary-run" disabled={busy || !serverStatus.running} onClick={run}>
+                <button className="primary-run" disabled={busy || matrixBusy || !serverStatus.running} onClick={run}>
                   <span className="play-icon">▶</span>
                   {busy ? 'Benchmark running…' : 'Run benchmark'}
                 </button>
@@ -499,6 +501,13 @@ function App() {
               </div>
             </section>
           </div>
+
+          <BenchmarkMatrix
+            profiles={profiles}
+            baseConfig={config}
+            disabled={busy || serverBusy || matrixBusy}
+            onRunningChange={setMatrixBusy}
+          />
         </div>
 
         <aside className="best-sidebar">
