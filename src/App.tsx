@@ -15,7 +15,7 @@ const profiles = [
   ['repetitive', 'Compressible control · 256 B'],
   ['compressed', 'Already-compressed control · 256 B'],
   ['random', 'Incompressible control · 256 B'],
-]
+] as const
 
 const initial: BenchmarkConfig = {
   profile: 'uuid',
