@@ -1306,6 +1306,21 @@ ipcMain.handle('bench:save', async (_event, payload) => {
   return { saved: true, path: result.filePath }
 })
 
+ipcMain.handle('bench:save-text', async (_event, payload) => {
+  const type = payload?.type === 'csv' ? 'csv' : 'txt'
+  const suggested = payload?.filename || `snugkv-benchmark.${type}`
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save benchmark export',
+    defaultPath: suggested,
+    filters: type === 'csv'
+      ? [{ name: 'CSV', extensions: ['csv'] }]
+      : [{ name: 'Text', extensions: ['txt'] }],
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+  writeFileSync(result.filePath, String(payload?.data ?? ''))
+  return { saved: true, path: result.filePath }
+})
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
