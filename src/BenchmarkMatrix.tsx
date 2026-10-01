@@ -43,12 +43,17 @@ function waitForJob(id: string): Promise<Job> {
 
 function finalBytesPerKey(job?: Job) {
   if (!job?.results) return null
-  return job.results.load.bytes_per_key_post_workload ?? job.results.load.bytes_per_key_delta
+  return job.results.load.bytes_per_key_delta
 }
 
 function finalMemory(job?: Job) {
   if (!job?.results) return null
-  return job.results.load.used_memory_post_workload_delta ?? job.results.load.used_memory_delta
+  return job.results.load.used_memory_delta
+}
+
+function hotBytesPerKey(job?: Job) {
+  if (!job?.results) return null
+  return job.results.load.bytes_per_key_post_workload ?? job.results.load.bytes_per_key_delta
 }
 
 function csvCell(value: unknown) {
@@ -172,7 +177,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
   }
 
   function asCsv() {
-    const header = ['profile','server','status','set_ops_s','get_ops_s','set_p95_us','get_p95_us','memory_bytes','bytes_per_key','error']
+    const header = ['profile','server','status','set_ops_s','get_ops_s','set_p95_us','get_p95_us','final_memory_bytes','final_bytes_per_key','hot_bytes_per_key','error']
     const lines = [header.join(',')]
     for (const row of rows) {
       const load = row.job?.results?.load
@@ -187,6 +192,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
         get ? get.p95_ns / 1000 : '',
         finalMemory(row.job) ?? '',
         finalBytesPerKey(row.job) ?? '',
+        hotBytesPerKey(row.job) ?? '',
         row.error ?? '',
       ].map(csvCell).join(','))
     }
@@ -195,18 +201,19 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
 
   function asMarkdown() {
     const lines = [
-      '| Profile | Server | SET/s | GET/s | SET p95 | GET p95 | Memory | B/key |',
-      '|---|---|---:|---:|---:|---:|---:|---:|',
+      '| Profile | Server | SET/s | GET/s | SET p95 | GET p95 | Final memory | Final B/key | Hot B/key |',
+      '|---|---|---:|---:|---:|---:|---:|---:|---:|',
     ]
     for (const row of rows) {
       if (!row.job?.results) {
-        lines.push(`| ${row.profile} | ${row.serverLabel} | ${row.status.toUpperCase()} | — | — | — | — | — |`)
+        lines.push(`| ${row.profile} | ${row.serverLabel} | ${row.status.toUpperCase()} | — | — | — | — | — | — |`)
         continue
       }
       const { load, get } = row.job.results
       const memory = finalMemory(row.job)
       const bpk = finalBytesPerKey(row.job)
-      lines.push(`| ${row.profile} | ${row.serverLabel} | ${Math.round(load.ops_per_second).toLocaleString()} | ${Math.round(get.ops_per_second).toLocaleString()} | ${(load.p95_ns / 1000).toFixed(2)} μs | ${(get.p95_ns / 1000).toFixed(2)} μs | ${memory === null ? '—' : (memory / 1024 / 1024).toFixed(1) + ' MB'} | ${bpk === null ? '—' : bpk.toFixed(2)} |`)
+      const hotBpk = hotBytesPerKey(row.job)
+      lines.push(`| ${row.profile} | ${row.serverLabel} | ${Math.round(load.ops_per_second).toLocaleString()} | ${Math.round(get.ops_per_second).toLocaleString()} | ${(load.p95_ns / 1000).toFixed(2)} μs | ${(get.p95_ns / 1000).toFixed(2)} μs | ${memory === null ? '—' : (memory / 1024 / 1024).toFixed(1) + ' MB'} | ${bpk === null ? '—' : bpk.toFixed(2)} | ${hotBpk === null ? '—' : hotBpk.toFixed(2)} |`)
     }
     return lines.join('\n')
   }
@@ -271,13 +278,14 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
 
           <div className="matrix-table-wrap">
             <table className="matrix-table">
-              <thead><tr><th>Profile</th><th>Server</th><th>Status</th><th>SET/s</th><th>GET/s</th><th>p95 SET</th><th>p95 GET</th><th>Memory</th><th>B/key</th></tr></thead>
+              <thead><tr><th>Profile</th><th>Server</th><th>Status</th><th>SET/s</th><th>GET/s</th><th>p95 SET</th><th>p95 GET</th><th>Final memory</th><th>Final B/key</th><th>Hot B/key</th></tr></thead>
               <tbody>
                 {rows.map(row => {
                   const load = row.job?.results?.load
                   const get = row.job?.results?.get
                   const memory = finalMemory(row.job)
                   const bpk = finalBytesPerKey(row.job)
+                  const hotBpk = hotBytesPerKey(row.job)
                   return <tr key={`${row.server}:${row.profile}`}>
                     <td><strong>{row.profile}</strong></td>
                     <td>{row.serverLabel}</td>
@@ -288,6 +296,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
                     <td>{get ? `${(get.p95_ns / 1000).toFixed(2)} μs` : '—'}</td>
                     <td>{memory === null ? '—' : `${(memory / 1024 / 1024).toFixed(1)} MB`}</td>
                     <td>{bpk === null ? '—' : bpk.toFixed(2)}</td>
+                    <td>{hotBpk === null ? '—' : hotBpk.toFixed(2)}</td>
                   </tr>
                 })}
               </tbody>
