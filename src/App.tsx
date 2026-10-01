@@ -189,9 +189,9 @@ function App() {
       if (!result) {
         lines.push('  no recorded result')
       } else {
-        lines.push(`  best SET/s: ${Math.round(result.bestSet)}`)
-        lines.push(`  best GET/s: ${Math.round(result.bestGet)}`)
-        lines.push(`  lowest bytes/key: ${Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : 'n/a'}`)
+        lines.push(`  best WRITE/s: ${Math.round(result.bestSet)}`)
+        lines.push(`  best READ/s: ${Math.round(result.bestGet)}`)
+        lines.push(`  lowest bytes/unit: ${Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : 'n/a'}`)
         lines.push(`  runs: ${result.runs}`)
       }
       lines.push('')
@@ -403,7 +403,7 @@ function App() {
               <details className="advanced-box">
                 <summary>Advanced</summary>
                 <div className="advanced-grid">
-                  <label><span>GET ops</span><input type="number" value={config.getOps} onChange={e => field('getOps', +e.target.value)} /></label>
+                  <label><span>Read ops</span><input type="number" value={config.getOps} onChange={e => field('getOps', +e.target.value)} /></label>
                   <label><span>Settle ms</span><input type="number" value={config.settleMs} onChange={e => field('settleMs', +e.target.value)} /></label>
                   <label><span>Seed</span><input type="number" value={config.seed} onChange={e => field('seed', +e.target.value)} /></label>
                   <label><span>Host</span><input value={config.host} onChange={e => field('host', e.target.value)} /></label>
@@ -479,12 +479,12 @@ function App() {
 
               <div className="metric-row">
                 <article className="metric-tile">
-                  <span>SET</span>
+                  <span>WRITE</span>
                   <strong>{r ? nf.format(Math.round(r.load.ops_per_second)) : '—'}</strong>
                   <small>ops/s{r ? ` · p95 ${us(r.load.p95_ns)}` : ''}</small>
                 </article>
                 <article className="metric-tile">
-                  <span>GET</span>
+                  <span>READ</span>
                   <strong>{r ? nf.format(Math.round(r.get.ops_per_second)) : '—'}</strong>
                   <small>ops/s{r ? ` · p95 ${us(r.get.p95_ns)}` : ''}</small>
                 </article>
@@ -500,14 +500,14 @@ function App() {
                   </small>
                 </article>
                 <article className="metric-tile">
-                  <span>Bytes/key</span>
+                  <span>Bytes/unit</span>
                   <strong>{r ? r.load.bytes_per_key_delta.toFixed(2) : '—'}</strong>
                   <small>
                     {r
                       ? r.load.bytes_per_key_post_workload !== undefined
                         ? `final · hot ${r.load.bytes_per_key_post_workload.toFixed(2)} B${r.load.converge_ms ? ` · ${r.load.converged ? 'converged' : 'timeout'}` : ''}`
-                        : 'B/key'
-                      : 'B/key'}
+                        : 'B/unit'
+                      : 'B/unit'}
                   </small>
                 </article>
               </div>
@@ -554,9 +554,9 @@ function App() {
                   </div>
                   {result ? (
                     <dl>
-                      <div><dt>Best SET</dt><dd>{nf.format(Math.round(result.bestSet))} /s</dd></div>
-                      <div><dt>Best GET</dt><dd>{nf.format(Math.round(result.bestGet))} /s</dd></div>
-                      <div><dt>Lowest B/key</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'} B</dd></div>
+                      <div><dt>Best WRITE</dt><dd>{nf.format(Math.round(result.bestSet))} /s</dd></div>
+                      <div><dt>Best READ</dt><dd>{nf.format(Math.round(result.bestGet))} /s</dd></div>
+                      <div><dt>Lowest B/unit</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'} B</dd></div>
                       <div><dt>Runs</dt><dd>{result.runs}</dd></div>
                     </dl>
                   ) : (
