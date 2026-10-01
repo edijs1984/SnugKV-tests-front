@@ -768,25 +768,23 @@ ipcMain.handle('server:status', () => {
 ipcMain.handle('db:list-keys', (_event, request = {}) => {
   const db = requireActiveDbServer()
   const pattern = cleanDbText(request.pattern || '*', 256) || '*'
-  const count = positiveInt(request.count, 300, 1000)
-  const scan = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', pattern], {
-    env: runtimeEnv(),
-    encoding: 'utf8',
-    timeout: 10000,
-    maxBuffer: 8 * 1024 * 1024,
-  })
-  if (scan.error) throw scan.error
-  if (scan.status !== 0) throw new Error(String(scan.stderr || scan.stdout || 'SCAN failed').trim())
+  const count = positiveInt(request.count, 200, 500)
 
-  const names = dbLines(String(scan.stdout || '').replace(/\r/g, '').trim()).filter(Boolean).slice(0, count)
-  const keys = names.map(key => {
-    let type = 'unknown'
-    try { type = runDbCli(['TYPE', key]) || 'unknown' } catch {}
-    return { key, type }
-  })
+  // Do one bounded SCAN page instead of redis-cli --scan. The latter walks the
+  // entire keyspace before returning and can easily time out on large databases.
+  const output = runDbCli(['SCAN', '0', 'MATCH', pattern, 'COUNT', String(count)], { timeout: 5000 })
+  const lines = dbLines(output).filter(line => line !== '')
+  const cursor = lines.shift() || '0'
+  const names = lines.slice(0, count)
+
+  // Do not spawn one redis-cli process per key just to obtain TYPE. Exact type
+  // is fetched by db:get-key when a key is opened.
+  const keys = names.map(key => ({ key, type: 'unknown' }))
+
   return {
     keys,
-    command: ['redis-cli', '-h', db.host, '-p', String(db.port), '--scan', '--pattern', shellDisplayArg(pattern)].join(' '),
+    cursor,
+    command: dbCommandDisplay(['SCAN', '0', 'MATCH', pattern, 'COUNT', String(count)]),
   }
 })
 
