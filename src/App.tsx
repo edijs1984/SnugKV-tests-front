@@ -15,6 +15,18 @@ const profiles = [
   ['repetitive', 'Compressible control · 256 B'],
   ['compressed', 'Already-compressed control · 256 B'],
   ['random', 'Incompressible control · 256 B'],
+  ['hash-small', 'Hash · 10 fields/key · 64 B values'],
+  ['hash-medium', 'Hash · 100 fields/key · 64 B values'],
+  ['hash-large', 'Hash · 1000 fields/key · 64 B values'],
+  ['list-small', 'List · 10 items/key · 64 B values'],
+  ['list-medium', 'List · 100 items/key · 64 B values'],
+  ['list-large', 'List · 1000 items/key · 64 B values'],
+  ['set-small', 'Set · 10 members/key'],
+  ['set-medium', 'Set · 100 members/key'],
+  ['set-large', 'Set · 1000 members/key'],
+  ['zset-small', 'Sorted set · 10 members/key'],
+  ['zset-medium', 'Sorted set · 100 members/key'],
+  ['zset-large', 'Sorted set · 1000 members/key'],
 ] as const
 
 const initial: BenchmarkConfig = {
