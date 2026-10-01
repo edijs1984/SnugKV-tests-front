@@ -9,6 +9,10 @@ const net = require('node:net')
 const profiles = new Set([
   'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
   'text', 'repetitive', 'compressed', 'random',
+  'hash-small', 'hash-medium', 'hash-large',
+  'list-small', 'list-medium', 'list-large',
+  'set-small', 'set-medium', 'set-large',
+  'zset-small', 'zset-medium', 'zset-large',
 ])
 
 let mainWindow
