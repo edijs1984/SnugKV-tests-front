@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('snugBench', {
   start: config => ipcRenderer.invoke('bench:start', config),
   cancel: () => ipcRenderer.invoke('bench:cancel'),
   save: payload => ipcRenderer.invoke('bench:save', payload),
+  saveText: payload => ipcRenderer.invoke('bench:save-text', payload),
   onUpdate: callback => {
     const listener = (_event, job) => callback(job)
     ipcRenderer.on('bench:update', listener)
