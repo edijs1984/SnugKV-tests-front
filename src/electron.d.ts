@@ -9,6 +9,7 @@ declare global {
       start(config: BenchmarkConfig): Promise<Job>
       cancel(): Promise<boolean>
       save(payload: { filename: string; data: unknown }): Promise<{ saved: boolean; path?: string }>
+      saveText(payload: { filename: string; data: string; type?: 'csv' | 'txt' }): Promise<{ saved: boolean; path?: string }>
       onUpdate(callback: (job: Job) => void): () => void
       serverStatus(): Promise<ServerStatus>
       startServer(kind: 'redis' | 'snug-raw' | 'snug-opt', optimizerMode?: OptimizerMode): Promise<ServerStatus>
