@@ -1478,3 +1478,167 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   .redisinsight-main { padding: 22px 16px 30px; }
   .redisinsight-toolbar { flex-direction: column; }
 }
+
+
+/* Full benchmark matrix */
+.matrix-card {
+  margin: 18px 0 0;
+  border: 1px solid #252b31;
+  border-radius: 12px;
+  background: #0d1115;
+  overflow: hidden;
+}
+.matrix-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 20px;
+  border-bottom: 1px solid #20262c;
+}
+.matrix-head h3 {
+  margin: 6px 0 4px;
+  font-size: 18px;
+}
+.matrix-head p {
+  margin: 0;
+  max-width: 720px;
+  color: #7f8993;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.matrix-primary-actions {
+  flex: 0 0 auto;
+}
+.matrix-progress {
+  padding: 14px 20px 0;
+}
+.matrix-progress > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #aeb7bf;
+  font-size: 10px;
+}
+.matrix-progress > div:first-child span {
+  color: #6f7a84;
+}
+.matrix-progress-track {
+  height: 6px;
+  margin-top: 8px;
+  background: #171d22;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.matrix-progress-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ff7a1a, #ff9a4b);
+  transition: width .2s ease;
+}
+.matrix-summary {
+  display: flex;
+  gap: 18px;
+  padding: 12px 20px;
+  color: #808a94;
+  font-size: 10px;
+}
+.matrix-summary b {
+  color: #d8dee3;
+  margin-left: 3px;
+}
+.matrix-table-wrap {
+  overflow: auto;
+  max-height: 560px;
+  border-top: 1px solid #20262c;
+  border-bottom: 1px solid #20262c;
+}
+.matrix-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+.matrix-table th,
+.matrix-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #1d2328;
+  text-align: right;
+  white-space: nowrap;
+}
+.matrix-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #11161b;
+  color: #737e88;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.matrix-table th:first-child,
+.matrix-table th:nth-child(2),
+.matrix-table th:nth-child(3),
+.matrix-table td:first-child,
+.matrix-table td:nth-child(2),
+.matrix-table td:nth-child(3) {
+  text-align: left;
+}
+.matrix-table tbody tr:hover {
+  background: #11161b;
+}
+.matrix-table td {
+  color: #aeb8c1;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+.matrix-table td strong {
+  color: #dbe1e6;
+}
+.matrix-table td small {
+  margin-left: 5px;
+  color: #ff786c;
+}
+.matrix-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 7px;
+  text-transform: uppercase;
+  font-size: 8px;
+  letter-spacing: .05em;
+}
+.matrix-status.running {
+  background: rgba(255, 154, 75, .12);
+  color: #ff9a4b;
+}
+.matrix-status.done {
+  background: rgba(68, 196, 129, .12);
+  color: #6ed7a5;
+}
+.matrix-status.failed {
+  background: rgba(255, 102, 102, .12);
+  color: #ff7e7e;
+}
+.matrix-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 20px;
+}
+.matrix-export-actions button {
+  border: 1px solid #303840;
+  border-radius: 8px;
+  background: #141a1f;
+  color: #cbd2d8;
+  padding: 8px 10px;
+  font-size: 10px;
+}
+.matrix-export-actions button:hover {
+  border-color: #47515b;
+  background: #182026;
+}
+@media (max-width: 900px) {
+  .matrix-head {
+    flex-direction: column;
+  }
+}
