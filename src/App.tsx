@@ -582,7 +582,7 @@ function App() {
       )}
 
       <footer className="app-footer">
-        <div><span>Skv</span><span>v0.1.7</span></div>
+        <div><span>Skv</span><span>v0.2.0</span></div>
         <div><span>SnugKV Benchmark Lab</span><span className="local-indicator" /> <span>Local</span></div>
       </footer>
     </main>
