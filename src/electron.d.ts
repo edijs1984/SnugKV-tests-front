@@ -12,7 +12,7 @@ declare global {
       saveText(payload: { filename: string; data: string; type?: 'csv' | 'txt' }): Promise<{ saved: boolean; path?: string }>
       onUpdate(callback: (job: Job) => void): () => void
       serverStatus(): Promise<ServerStatus>
-      startServer(kind: 'redis' | 'snug-raw' | 'snug-opt', optimizerMode?: OptimizerMode): Promise<ServerStatus>
+      startServer(kind: 'redis' | 'snug', optimizerMode?: OptimizerMode): Promise<ServerStatus>
       stopServer(): Promise<ServerStatus>
       onServerUpdate(callback: (status: ServerStatus) => void): () => void
       bestResults(profile: string): Promise<ProfileBestResults>
