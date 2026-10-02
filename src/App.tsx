@@ -44,8 +44,7 @@ function App() {
   const [resettingBest, setResettingBest] = useState(false)
   const [best, setBest] = useState<ProfileBestResults>({
     redis: null,
-    'snug-raw': null,
-    'snug-opt': null,
+    snug: null,
   })
 
   useEffect(() => {
@@ -95,7 +94,7 @@ function App() {
     }
   }, [config.profile])
 
-  async function startServer(kind: 'redis' | 'snug-raw' | 'snug-opt') {
+  async function startServer(kind: 'redis' | 'snug') {
     setServerBusy(true)
     setAppError(null)
     try {
@@ -156,8 +155,7 @@ function App() {
     const profileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
     const rows = [
       ['redis', 'Redis'],
-      ['snug-raw', 'SnugKV raw'],
-      ['snug-opt', 'SnugKV opt'],
+      ['snug', 'SnugKV'],
     ] as const
 
     const lines = [
@@ -210,11 +208,12 @@ function App() {
   const runConfig = job?.config ?? config
   const selectedProfileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
   const activeMode = serverStatus.kind
-  const encodingOn = activeMode === 'snug-opt'
-  const compressionOn = activeMode === 'snug-opt'
-  const jsonShapeOn = activeMode === 'snug-opt'
+  const adaptiveOn = activeMode === 'snug'
+  const encodingOn = adaptiveOn
+  const compressionOn = adaptiveOn
+  const jsonShapeOn = adaptiveOn
   const optimization = job?.optimization
-  const optimizing = busy && activeMode === 'snug-opt' && optimization
+  const optimizing = busy && adaptiveOn && optimization
   const optimizationStartMB = optimization?.start_used_memory ? optimization.start_used_memory / 1024 / 1024 : 0
   const optimizationCurrentMB = optimization?.used_memory ? optimization.used_memory / 1024 / 1024 : 0
   const optimizationSavedMB = optimization ? Math.max(0, optimizationStartMB - optimizationCurrentMB) : 0
@@ -249,8 +248,7 @@ function App() {
             <div className="server-switches">
               {([
                 ['redis', 'Redis'],
-                ['snug-raw', 'SnugKV raw'],
-                ['snug-opt', 'SnugKV opt'],
+                ['snug', 'SnugKV'],
               ] as const).map(([kind, label]) => (
                 <button
                   key={kind}
@@ -272,9 +270,9 @@ function App() {
                   onClick={stopServer}
                   title="Stop server"
                 >
-                  {activeMode === 'snug-opt'
-                    ? `OPT · ${(serverStatus.optimizerMode ?? 'dedicated').toUpperCase()}`
-                    : activeMode === 'snug-raw' ? 'RAW' : 'REDIS'}
+                  {activeMode === 'snug'
+                    ? `ADAPTIVE · ${(serverStatus.optimizerMode ?? 'dedicated').toUpperCase()}`
+                    : 'REDIS'}
                 </button>
               )}
             </div>
@@ -331,10 +329,10 @@ function App() {
                   {(config.optimizerMode ?? 'dedicated') === 'dedicated'
                     ? 'Uses the host aggressively for SnugKV.'
                     : 'Leaves CPU and memory headroom for colocated apps.'}
-                  {activeMode === 'snug-opt' &&
+                  {activeMode === 'snug' &&
                     serverStatus.optimizerMode &&
                     serverStatus.optimizerMode !== (config.optimizerMode ?? 'dedicated')
-                    ? ' Restart SnugKV opt to apply.'
+                    ? ' Restart SnugKV to apply.'
                     : ''}
                 </small>
               </div>
@@ -489,8 +487,7 @@ function App() {
           <div className="best-list">
             {([
               ['redis', 'Redis'],
-              ['snug-raw', 'SnugKV raw'],
-              ['snug-opt', 'SnugKV opt'],
+              ['snug', 'SnugKV'],
             ] as const).map(([key, label]) => {
               const result = best[key]
               return (
@@ -517,7 +514,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <div><span>Skv</span><span>v0.1.7</span></div>
+        <div><span>Skv</span><span>v0.2.0</span></div>
         <div><span>SnugKV Benchmark Lab</span><span className="local-indicator" /> <span>Local</span></div>
       </footer>
     </main>
