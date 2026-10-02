@@ -2,12 +2,12 @@
 
 Desktop Electron + React UI for SnugKV's published Redis-compatible benchmark profiles.
 
-The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containers. Start the target server yourself and point the app at its host and port. Electron invokes the same `scripts/bench/bench-one.sh` used by the CLI, so desktop and terminal results remain comparable.
+The app can start native Redis or adaptive SnugKV locally, or benchmark an already-running Redis-compatible server. Electron invokes the same `scripts/bench/bench-one.sh` used by the CLI, so desktop and terminal results remain comparable.
 
 ## Features
 
 - Native Electron desktop app.
-- One-click local server controls for Redis, SnugKV raw, and SnugKV optimized.
+- One-click native local server controls for Redis and adaptive SnugKV.
 - React/Vite renderer.
 - Test profiles: cached JSON, session JSON, API JSON, counter, UUID, text, compressible, already-compressed, random.
 - Editable host, port, result label, key count, GET operations, workers, pipeline, settle time, and seed.
@@ -17,7 +17,7 @@ The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containe
 - Native Save dialog for result JSON.
 - Cancel running benchmark.
 - Shows the equivalent CLI command.
-- No Docker or database lifecycle management.
+- No Docker dependency; local benchmark servers run as native processes.
 
 > **Warning:** the benchmark runs `FLUSHDB` on the selected target.
 
@@ -122,12 +122,11 @@ The renderer has no Node integration. Shell execution stays in the Electron main
 
 ## One-click local servers
 
-The desktop app includes three buttons:
+The desktop app includes two local server buttons:
 
 - Redis on `127.0.0.1:6390`
-- SnugKV raw on `127.0.0.1:6382`
-- SnugKV optimized on `127.0.0.1:6383`
+- adaptive SnugKV on `127.0.0.1:6383`
 
-On Linux, starting one first clears listeners on all three benchmark ports, then starts the selected server and waits until its TCP port is ready. SnugKV is rebuilt from the current checkout before raw/optimized launch, so the desktop benchmark uses current source code.
+On Linux, starting one first clears listeners on both benchmark ports, then starts the selected native server and waits until its TCP port is ready. SnugKV is rebuilt from the current checkout before launch, so the desktop benchmark uses current source code. Adaptive encoding, compression, JSON-shape handling, and terminal RAW behavior are selected per value inside SnugKV rather than through separate raw/optimized product modes.
 
 Redis requires `redis-server` to be installed and available on `PATH`. SnugKV requires Go to be installed.
