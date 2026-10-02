@@ -20,12 +20,8 @@ const serverDefs = {
     label: 'redis',
     port: 6390,
   },
-  'snug-raw': {
-    label: 'snug-raw',
-    port: 6382,
-  },
-  'snug-opt': {
-    label: 'snug-opt',
+  snug: {
+    label: 'snug',
     port: 6383,
   },
 }
@@ -190,16 +186,14 @@ function resetCutoff(profile) {
 function normalizeServerLabel(label) {
   const value = String(label || '').toLowerCase().replace(/_/g, '-')
   if (value === 'redis') return 'redis'
-  if (value === 'snug-raw') return 'snug-raw'
-  if (value === 'snug-opt' || value === 'snug-mod') return 'snug-opt'
+  if (value === 'snug' || value === 'snug-raw' || value === 'snug-opt' || value === 'snug-mod') return 'snug'
   return null
 }
 
 function emptyBest() {
   return {
     redis: null,
-    'snug-raw': null,
-    'snug-opt': null,
+    snug: null,
   }
 }
 
@@ -215,6 +209,25 @@ function loadSavedHistory() {
 function saveHistory(history) {
   writeFileSync(historyPath(), JSON.stringify(history, null, 2) + '\n')
 }
+function mergeLegacySnugHistory(profileSaved = {}) {
+  const records = [profileSaved.snug, profileSaved['snug-opt'], profileSaved['snug-raw']].filter(Boolean)
+  if (!records.length) return null
+
+  return records.reduce((merged, record) => {
+    if (!merged) return { ...record }
+    merged.bestSet = Math.max(merged.bestSet || 0, record.bestSet || 0)
+    merged.bestGet = Math.max(merged.bestGet || 0, record.bestGet || 0)
+    const values = [merged.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
+    merged.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
+    merged.runs = Math.max(merged.runs || 0, record.runs || 0)
+    if (record.lastUpdated && (!merged.lastUpdated || record.lastUpdated > merged.lastUpdated)) {
+      merged.lastUpdated = record.lastUpdated
+      merged.source = record.source
+    }
+    return merged
+  }, null)
+}
+
 
 function mergeBest(current, load, get, source) {
   if (!load || !get) return current
@@ -288,9 +301,13 @@ function bestResultsForProfile(profile) {
   const saved = loadSavedHistory()
   const profileSaved = saved[profile] || {}
   const cutoff = resetCutoff(profile)
+  const migratedSaved = {
+    redis: profileSaved.redis || null,
+    snug: mergeLegacySnugHistory(profileSaved),
+  }
 
-  for (const key of ['redis', 'snug-raw', 'snug-opt']) {
-    const record = profileSaved[key]
+  for (const key of ['redis', 'snug']) {
+    const record = migratedSaved[key]
     if (!record) continue
     if (cutoff > 0 && Date.parse(String(record.lastUpdated || '')) <= cutoff) continue
     const current = result[key]
@@ -381,7 +398,7 @@ async function killBenchmarkPorts() {
 
   if (process.platform === 'linux') {
     try {
-      await runCommand(fuserPath(), ['-k', '6390/tcp', '6382/tcp', '6383/tcp'], { env: runtimeEnv() })
+      await runCommand(fuserPath(), ['-k', '6390/tcp', '6383/tcp'], { env: runtimeEnv() })
     } catch {
       // fuser exits non-zero when no process owns a port; that is fine.
     }
@@ -429,16 +446,7 @@ async function startManagedServer(request) {
       '-admin-listen', '',
       '-pprof-listen', '',
     ]
-    if (kind === 'snug-raw') {
-      args.push('-encoding=false', '-compression=false', '-json-shape=false')
-    } else {
-      args.push(
-        '-encoding=true',
-        '-compression=true',
-        '-json-shape=true',
-        '-optimizer-mode', optimizerMode,
-      )
-    }
+    args.push('-optimizer-mode', optimizerMode)
   }
 
   const child = spawn(command, args, {
@@ -460,7 +468,7 @@ async function startManagedServer(request) {
     child,
     port: def.port,
     label: def.label,
-    optimizerMode: kind === 'snug-opt' ? optimizerMode : undefined,
+    optimizerMode: kind === 'snug' ? optimizerMode : undefined,
   }
 
   child.once('exit', () => {
@@ -471,7 +479,7 @@ async function startManagedServer(request) {
         kind,
         port: def.port,
         label: def.label,
-        optimizerMode: kind === 'snug-opt' ? optimizerMode : undefined,
+        optimizerMode: kind === 'snug' ? optimizerMode : undefined,
       })
     }
   })
@@ -490,7 +498,7 @@ async function startManagedServer(request) {
     kind,
     port: def.port,
     label: def.label,
-    optimizerMode: kind === 'snug-opt' ? optimizerMode : undefined,
+    optimizerMode: kind === 'snug' ? optimizerMode : undefined,
   }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('server:update', status)
   return status

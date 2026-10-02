@@ -67,7 +67,7 @@ export type Job = {
 
 export type ServerStatus = {
   running: boolean
-  kind?: 'redis' | 'snug-raw' | 'snug-opt'
+  kind?: 'redis' | 'snug'
   port?: number
   label?: string
   optimizerMode?: OptimizerMode
@@ -84,6 +84,5 @@ export type BestServerResult = {
 
 export type ProfileBestResults = {
   redis: BestServerResult | null
-  'snug-raw': BestServerResult | null
-  'snug-opt': BestServerResult | null
+  snug: BestServerResult | null
 }
