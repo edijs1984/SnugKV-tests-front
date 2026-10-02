@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import type { BenchmarkConfig, Job } from './types'
 
-type ServerKind = 'redis' | 'snug-raw' | 'snug-opt'
+type ServerKind = 'redis' | 'snug'
 type Profile = readonly [string, string]
 
 type MatrixRow = {
@@ -25,8 +25,7 @@ type Props = {
 
 const serverDefs: readonly [ServerKind, string][] = [
   ['redis', 'Redis'],
-  ['snug-raw', 'SnugKV raw'],
-  ['snug-opt', 'SnugKV opt'],
+  ['snug', 'SnugKV'],
 ]
 
 const nf = new Intl.NumberFormat('en-US')
@@ -64,7 +63,7 @@ function csvCell(value: unknown) {
 export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunningChange }: Props) {
   const [rows, setRows] = useState<MatrixRow[]>([])
   const [running, setRunning] = useState(false)
-  const [selectedServers, setSelectedServers] = useState<ServerKind[]>(['redis', 'snug-raw', 'snug-opt'])
+  const [selectedServers, setSelectedServers] = useState<ServerKind[]>(['redis', 'snug'])
   const [progress, setProgress] = useState({ current: 0, total: profiles.length * serverDefs.length, label: '' })
   const [copyState, setCopyState] = useState('')
   const cancelled = useRef(false)
