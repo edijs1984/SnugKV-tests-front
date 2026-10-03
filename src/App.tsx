@@ -514,18 +514,6 @@ function App() {
             </section>
           </div>
 
-          <PipelineSweep
-            baseConfig={config}
-            disabled={busy || serverBusy || matrixBusy}
-            onRunningChange={setSweepBusy}
-          />
-
-          <BenchmarkMatrix
-            profiles={profiles}
-            baseConfig={config}
-            disabled={busy || serverBusy || matrixBusy || sweepBusy}
-            onRunningChange={setMatrixBusy}
-          />
         </div>
 
         <aside className="best-sidebar">
@@ -572,6 +560,21 @@ function App() {
             })}
           </div>
         </aside>
+
+        <div className="benchmark-wide-bottom">
+          <PipelineSweep
+            baseConfig={config}
+            disabled={busy || serverBusy || matrixBusy}
+            onRunningChange={setSweepBusy}
+          />
+
+          <BenchmarkMatrix
+            profiles={profiles}
+            baseConfig={config}
+            disabled={busy || serverBusy || matrixBusy || sweepBusy}
+            onRunningChange={setMatrixBusy}
+          />
+        </div>
       </section>
       ) : activeTab === 'playground' ? (
         <Playground serverStatus={serverStatus} />
