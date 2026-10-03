@@ -1588,12 +1588,40 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   opacity: .4;
   cursor: not-allowed;
 }
+.matrix-profile-groups {
+  max-height: 360px;
+  overflow: auto;
+  background: #0b0f13;
+}
+.matrix-profile-group {
+  border-bottom: 1px solid #20272d;
+}
+.matrix-profile-group:last-child {
+  border-bottom: 0;
+}
+.matrix-profile-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: #11171c;
+  border-bottom: 1px solid #20272d;
+}
+.matrix-profile-group-head strong {
+  color: #e1e6ea;
+  font-size: 10px;
+}
+.matrix-profile-group-head span {
+  color: #6f7a84;
+  font-size: 9px;
+}
 .matrix-profile-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
-  max-height: 240px;
-  overflow: auto;
   background: #1b2228;
 }
 .matrix-profile {
