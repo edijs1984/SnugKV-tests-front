@@ -64,6 +64,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
   const [rows, setRows] = useState<MatrixRow[]>([])
   const [running, setRunning] = useState(false)
   const [selectedServers, setSelectedServers] = useState<ServerKind[]>(['redis', 'snug'])
+  const [selectedProfiles, setSelectedProfiles] = useState<string[]>(() => profiles.map(([profile]) => profile))
   const [progress, setProgress] = useState({ current: 0, total: profiles.length * serverDefs.length, label: '' })
   const [copyState, setCopyState] = useState('')
   const cancelled = useRef(false)
@@ -90,8 +91,31 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
     )
   }
 
-  async function runMatrix() {
+  function toggleProfile(profile: string) {
+    if (running) return
+    setSelectedProfiles(current =>
+      current.includes(profile)
+        ? current.filter(item => item !== profile)
+        : [...current, profile],
+    )
+  }
+
+  function selectAllProfiles() {
+    if (running) return
+    setSelectedProfiles(profiles.map(([profile]) => profile))
+  }
+
+  function clearSelectedProfiles() {
+    if (running) return
+    setSelectedProfiles([])
+  }
+
+  async function runMatrix(mode: 'all' | 'selected') {
     if (running || selectedServers.length === 0) return
+    const activeProfiles = mode === 'all'
+      ? profiles
+      : profiles.filter(([profile]) => selectedProfiles.includes(profile))
+    if (activeProfiles.length === 0) return
     cancelled.current = false
     setRows([])
     setRunning(true)
@@ -99,7 +123,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
     setCopyState('')
 
     const activeServers = serverDefs.filter(([server]) => selectedServers.includes(server))
-    const total = profiles.length * activeServers.length
+    const total = activeProfiles.length * activeServers.length
     setProgress({ current: 0, total, label: '' })
     let current = 0
 
@@ -112,7 +136,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
           status = await window.snugBench.startServer(server, baseConfig.optimizerMode ?? 'dedicated')
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          for (const [profile, profileLabel] of profiles) {
+          for (const [profile, profileLabel] of activeProfiles) {
             current += 1
             const now = new Date().toISOString()
             replaceRow({ profile, server }, {
@@ -123,7 +147,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
           continue
         }
 
-        for (const [profile, profileLabel] of profiles) {
+        for (const [profile, profileLabel] of activeProfiles) {
           if (cancelled.current) break
           current += 1
           const label = `${serverLabel} · ${profileLabel}`
@@ -245,6 +269,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
           generatedAt: new Date().toISOString(),
           baseConfig,
           profiles: profiles.map(([id, label]) => ({ id, label })),
+          selectedProfiles,
           servers: serverDefs
             .filter(([server]) => selectedServers.includes(server))
             .map(([id, label]) => ({ id, label })),
@@ -264,11 +289,11 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
     <section className="matrix-card">
       <div className="matrix-head">
         <div>
-          <span className="eyebrow">All profiles · selected servers</span>
+          <span className="eyebrow">Selectable profiles · selected servers</span>
           <h3>Full benchmark matrix</h3>
           <p>
-            Runs {profiles.length} profiles × {selectedServers.length} selected server{selectedServers.length === 1 ? '' : 's'}
-            {' '}({profiles.length * selectedServers.length} runs) sequentially using the current keys, workers, pipeline and advanced settings.
+            Run the complete matrix or choose exactly which profiles to benchmark. Current selection:
+            {' '}{selectedProfiles.length} of {profiles.length} profiles × {selectedServers.length} selected server{selectedServers.length === 1 ? '' : 's'}.
           </p>
           <div className="server-switches matrix-server-switches" aria-label="Matrix servers">
             {serverDefs.map(([server, label]) => {
@@ -290,14 +315,59 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
           {selectedServers.length === 0 && (
             <small className="inline-error">Select at least one server to run the matrix.</small>
           )}
+
+          <div className="matrix-profile-selector">
+            <div className="matrix-profile-selector-head">
+              <div>
+                <strong>Profiles</strong>
+                <span>{selectedProfiles.length} / {profiles.length} selected</span>
+              </div>
+              <div>
+                <button type="button" disabled={running || disabled} onClick={selectAllProfiles}>Select all</button>
+                <button type="button" disabled={running || disabled || selectedProfiles.length === 0} onClick={clearSelectedProfiles}>Clear</button>
+              </div>
+            </div>
+            <div className="matrix-profile-grid">
+              {profiles.map(([profile, label]) => {
+                const selected = selectedProfiles.includes(profile)
+                return (
+                  <label key={profile} className={selected ? 'matrix-profile active' : 'matrix-profile'}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={running || disabled}
+                      onChange={() => toggleProfile(profile)}
+                    />
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{profile}</small>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
         </div>
         <div className="matrix-primary-actions">
           {!running ? (
-            <button className="primary-run" disabled={disabled || selectedServers.length === 0} onClick={runMatrix}>
-              ▶ Run {selectedServers.length === 1
-                ? serverDefs.find(([server]) => server === selectedServers[0])?.[1]
-                : 'selected matrix'}
-            </button>
+            <>
+              <button
+                className="primary-run"
+                disabled={disabled || selectedServers.length === 0}
+                onClick={() => runMatrix('all')}
+              >
+                ▶ Run all
+                <small>{profiles.length * selectedServers.length} runs</small>
+              </button>
+              <button
+                className="matrix-run-selected"
+                disabled={disabled || selectedServers.length === 0 || selectedProfiles.length === 0}
+                onClick={() => runMatrix('selected')}
+              >
+                ▶ Run selected
+                <small>{selectedProfiles.length * selectedServers.length} runs</small>
+              </button>
+            </>
           ) : (
             <button className="secondary-stop" onClick={cancelMatrix}>Cancel matrix</button>
           )}
