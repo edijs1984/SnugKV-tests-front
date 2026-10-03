@@ -28,6 +28,15 @@ const serverDefs: readonly [ServerKind, string][] = [
   ['snug', 'SnugKV'],
 ]
 
+
+const profileGroups = [
+  { id: 'scalar', label: 'Strings / scalar', match: (profile: string) => !/^(hash|list|set|zset)-/.test(profile) },
+  { id: 'hash', label: 'Hash', match: (profile: string) => profile.startsWith('hash-') },
+  { id: 'list', label: 'List', match: (profile: string) => profile.startsWith('list-') },
+  { id: 'set', label: 'Set', match: (profile: string) => profile.startsWith('set-') },
+  { id: 'zset', label: 'Sorted Set (ZSET)', match: (profile: string) => profile.startsWith('zset-') },
+] as const
+
 const nf = new Intl.NumberFormat('en-US')
 
 function waitForJob(id: string): Promise<Job> {
@@ -327,22 +336,37 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
                 <button type="button" disabled={running || disabled || selectedProfiles.length === 0} onClick={clearSelectedProfiles}>Clear</button>
               </div>
             </div>
-            <div className="matrix-profile-grid">
-              {profiles.map(([profile, label]) => {
-                const selected = selectedProfiles.includes(profile)
+            <div className="matrix-profile-groups">
+              {profileGroups.map(group => {
+                const groupProfiles = profiles.filter(([profile]) => group.match(profile))
+                if (groupProfiles.length === 0) return null
+                const selectedCount = groupProfiles.filter(([profile]) => selectedProfiles.includes(profile)).length
                 return (
-                  <label key={profile} className={selected ? 'matrix-profile active' : 'matrix-profile'}>
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      disabled={running || disabled}
-                      onChange={() => toggleProfile(profile)}
-                    />
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{profile}</small>
-                    </span>
-                  </label>
+                  <section className="matrix-profile-group" key={group.id}>
+                    <div className="matrix-profile-group-head">
+                      <strong>{group.label}</strong>
+                      <span>{selectedCount}/{groupProfiles.length}</span>
+                    </div>
+                    <div className="matrix-profile-grid">
+                      {groupProfiles.map(([profile, label]) => {
+                        const selected = selectedProfiles.includes(profile)
+                        return (
+                          <label key={profile} className={selected ? 'matrix-profile active' : 'matrix-profile'}>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={running || disabled}
+                              onChange={() => toggleProfile(profile)}
+                            />
+                            <span>
+                              <strong>{label}</strong>
+                              <small>{profile}</small>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </section>
                 )
               })}
             </div>
