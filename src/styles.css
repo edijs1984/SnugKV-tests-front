@@ -242,6 +242,26 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   background: #0e1216;
   min-width: 0;
 }
+
+.benchmark-wide-bottom {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 0 32px 32px;
+  border-top: 1px solid #252a30;
+  background: #0b0e11;
+}
+
+.benchmark-wide-bottom > :first-child {
+  margin-top: 24px;
+}
+
+.benchmark-wide-bottom .matrix-card {
+  width: 100%;
+}
+
+.benchmark-wide-bottom .matrix-table {
+  min-width: 1180px;
+}
 .best-sidebar-head {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
   margin-bottom: 22px;
@@ -297,6 +317,7 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   .app-header, .app-footer { padding-left: 16px; padding-right: 16px; }
   .brand-subtitle, .brand-divider { display: none; }
   .server-strip, .config-column, .results-workspace { padding-left: 16px; padding-right: 16px; }
+  .benchmark-wide-bottom { padding-left: 16px; padding-right: 16px; }
   .server-switches { grid-template-columns: 1fr; }
   .compact-field { grid-template-columns: 1fr; gap: 7px; }
   .advanced-grid, .best-list { grid-template-columns: 1fr; }
