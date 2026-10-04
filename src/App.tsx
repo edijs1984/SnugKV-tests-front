@@ -128,7 +128,6 @@ function App() {
       setJob(next)
       if (next.status === 'done' && next.results && next.config?.profile === config.profile) {
         setBest(prev => mergeCompletedJobIntoBest(prev, next))
-        window.snugBench.bestResults(next.config.profile).then(setBest).catch(() => {})
       }
       if (next.status !== 'running') setBusy(false)
     })
