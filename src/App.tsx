@@ -49,6 +49,43 @@ const speed = (n: number) => `${nf.format(Math.round(n))}/s`
 const us = (ns: number) => `${(ns / 1000).toFixed(2)} μs`
 const bytes = (n: number) => nf.format(Math.round(n))
 
+function mergeCompletedJobIntoBest(
+  previous: ProfileBestResults,
+  job: Job,
+): ProfileBestResults {
+  if (job.status !== 'done' || !job.results || !job.config) return previous
+
+  const server = String(job.results.load.server || job.config.server).toLowerCase()
+  const key: keyof ProfileBestResults | null =
+    server === 'redis'
+      ? 'redis'
+      : (server === 'snug' || server === 'snug-opt' || server === 'snug-mod' || server === 'snug-raw')
+        ? 'snug'
+        : null
+
+  if (!key) return previous
+
+  const current = previous[key]
+  const load = job.results.load
+  const get = job.results.get
+  const bpk = Number(load.bytes_per_key_delta)
+
+  return {
+    ...previous,
+    [key]: {
+      bestSet: Math.max(current?.bestSet ?? 0, Number(load.ops_per_second) || 0),
+      bestGet: Math.max(current?.bestGet ?? 0, Number(get.ops_per_second) || 0),
+      lowestBytesPerKey:
+        Number.isFinite(bpk) && bpk > 0
+          ? Math.min(current?.lowestBytesPerKey ?? Number.POSITIVE_INFINITY, bpk)
+          : current?.lowestBytesPerKey ?? Number.POSITIVE_INFINITY,
+      runs: (current?.runs ?? 0) + 1,
+      lastUpdated: new Date().toISOString(),
+      source: 'electron',
+    },
+  }
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<'benchmark' | 'playground' | 'database' | 'validation'>('benchmark')
   const [config, setConfig] = useState(initial)
@@ -89,6 +126,10 @@ function App() {
   useEffect(() => {
     const offBench = window.snugBench.onUpdate((next: Job) => {
       setJob(next)
+      if (next.status === 'done' && next.results && next.config?.profile === config.profile) {
+        setBest(prev => mergeCompletedJobIntoBest(prev, next))
+        window.snugBench.bestResults(next.config.profile).then(setBest).catch(() => {})
+      }
       if (next.status !== 'running') setBusy(false)
     })
     const offServer = window.snugBench.onServerUpdate((next: ServerStatus) => {
