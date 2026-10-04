@@ -329,26 +329,31 @@ function bestResultsAllProfiles() {
 function bestResultsForProfile(profile) {
   const result = scanCliHistory(profile)
   const saved = loadSavedHistory()
-  const profileSaved = saved[profile] || {}
   const cutoff = resetCutoff(profile)
 
+  const savedProfiles = Object.entries(saved)
+    .filter(([rawProfile]) => canonicalProfile(rawProfile) === profile)
+    .map(([, records]) => records || {})
+
   for (const key of ['redis', 'snug-raw', 'snug-opt']) {
-    const record = profileSaved[key]
-    if (!record) continue
-    if (cutoff > 0 && Date.parse(String(record.lastUpdated || '')) <= cutoff) continue
-    const current = result[key]
-    if (!current) {
-      result[key] = record
-      continue
-    }
-    current.bestSet = Math.max(current.bestSet || 0, record.bestSet || 0)
-    current.bestGet = Math.max(current.bestGet || 0, record.bestGet || 0)
-    const values = [current.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
-    current.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
-    current.runs = Math.max(current.runs || 0, record.runs || 0)
-    if (record.lastUpdated && (!current.lastUpdated || record.lastUpdated > current.lastUpdated)) {
-      current.lastUpdated = record.lastUpdated
-      current.source = record.source
+    for (const profileSaved of savedProfiles) {
+      const record = profileSaved[key]
+      if (!record) continue
+      if (cutoff > 0 && Date.parse(String(record.lastUpdated || '')) <= cutoff) continue
+      const current = result[key]
+      if (!current) {
+        result[key] = { ...record }
+        continue
+      }
+      current.bestSet = Math.max(current.bestSet || 0, record.bestSet || 0)
+      current.bestGet = Math.max(current.bestGet || 0, record.bestGet || 0)
+      const values = [current.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
+      current.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
+      current.runs = Math.max(current.runs || 0, record.runs || 0)
+      if (record.lastUpdated && (!current.lastUpdated || record.lastUpdated > current.lastUpdated)) {
+        current.lastUpdated = record.lastUpdated
+        current.source = record.source
+      }
     }
   }
 
