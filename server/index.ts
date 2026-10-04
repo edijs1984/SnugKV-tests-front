@@ -29,8 +29,12 @@ type Job = {
 }
 
 const profiles = new Set([
-  'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
+  'session-json', 'api-json', 'cache-json', 'counter', 'uuid', 'ulid',
   'text', 'repetitive', 'compressed', 'random',
+  'hash-small', 'hash-medium', 'hash-large',
+  'list-small', 'list-medium', 'list-large',
+  'set-small', 'set-medium', 'set-large',
+  'zset-small', 'zset-medium', 'zset-large',
 ])
 
 const app = express()
