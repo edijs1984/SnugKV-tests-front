@@ -6,10 +6,35 @@ const { join, resolve } = require('node:path')
 const os = require('node:os')
 const net = require('node:net')
 
-const profiles = new Set([
-  'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
+const profileNames = [
+  'session-json', 'api-json', 'cache-json', 'counter', 'uuid', 'ulid',
   'text', 'repetitive', 'compressed', 'random',
-])
+  'hash-small', 'hash-medium', 'hash-large',
+  'list-small', 'list-medium', 'list-large',
+  'set-small', 'set-medium', 'set-large',
+  'zset-small', 'zset-medium', 'zset-large',
+]
+const profiles = new Set(profileNames)
+
+const valueShapeToProfile = {
+  'hash-10': 'hash-small',
+  'hash-100': 'hash-medium',
+  'hash-1000': 'hash-large',
+  'list-10': 'list-small',
+  'list-100': 'list-medium',
+  'list-1000': 'list-large',
+  'set-10': 'set-small',
+  'set-100': 'set-medium',
+  'set-1000': 'set-large',
+  'zset-10': 'zset-small',
+  'zset-100': 'zset-medium',
+  'zset-1000': 'zset-large',
+}
+
+function canonicalProfile(value) {
+  const raw = String(value || '')
+  return valueShapeToProfile[raw] || raw
+}
 
 let mainWindow
 let activeChild = null
@@ -271,7 +296,7 @@ function scanCliHistory(profile) {
     try {
       const load = JSON.parse(readFileSync(loadPath, 'utf8'))
       const get = JSON.parse(readFileSync(getPath, 'utf8'))
-      if (load.value_shape !== profile || get.value_shape !== profile) continue
+      if (canonicalProfile(load.value_shape) !== profile || canonicalProfile(get.value_shape) !== profile) continue
       const key = normalizeServerLabel(load.server)
       if (!key) continue
       best[key] = mergeBest(best[key], load, get, 'cli')
@@ -281,6 +306,24 @@ function scanCliHistory(profile) {
   }
 
   return best
+}
+
+function bestResultsAllProfiles() {
+  const result = {}
+  for (const profile of profileNames) {
+    result[profile] = bestResultsForProfile(profile)
+  }
+
+  // Preserve any historical profiles that may have been written before the
+  // UI knew about them. Canonicalize structure aliases where possible.
+  const saved = loadSavedHistory()
+  for (const rawProfile of Object.keys(saved)) {
+    const profile = canonicalProfile(rawProfile)
+    if (!result[profile]) {
+      result[profile] = bestResultsForProfile(profile)
+    }
+  }
+  return result
 }
 
 function bestResultsForProfile(profile) {
@@ -312,8 +355,8 @@ function bestResultsForProfile(profile) {
   return result
 }
 
-function recordCompletedResult(load, get) {
-  const profile = load?.value_shape
+function recordCompletedResult(profileHint, load, get) {
+  const profile = canonicalProfile(profileHint || load?.value_shape)
   const key = normalizeServerLabel(load?.server)
   if (!profile || !key) return
 
@@ -516,9 +559,12 @@ ipcMain.handle('server:status', () => {
 })
 
 ipcMain.handle('history:get', (_event, profile) => {
-  if (!profiles.has(String(profile))) return emptyBest()
-  return bestResultsForProfile(String(profile))
+  const normalized = canonicalProfile(profile)
+  if (!profiles.has(normalized)) return emptyBest()
+  return bestResultsForProfile(normalized)
 })
+
+ipcMain.handle('history:get-all', () => bestResultsAllProfiles())
 
 ipcMain.handle('history:reset', (_event, profile) => {
   const normalized = String(profile)
@@ -669,7 +715,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
       job.results = { load, get }
       job.status = 'done'
-      recordCompletedResult(load, get)
+      recordCompletedResult(c.profile, load, get)
     } catch (error) {
       job.status = 'failed'
       job.error = error instanceof Error ? error.message : String(error)
