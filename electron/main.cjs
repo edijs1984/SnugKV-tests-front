@@ -126,6 +126,26 @@ const validationSuites = [
 
 const validationSuiteIds = new Set(validationSuites.map(suite => suite.id))
 
+const valueShapeToProfile = {
+  'hash-10': 'hash-small',
+  'hash-100': 'hash-medium',
+  'hash-1000': 'hash-large',
+  'list-10': 'list-small',
+  'list-100': 'list-medium',
+  'list-1000': 'list-large',
+  'set-10': 'set-small',
+  'set-100': 'set-medium',
+  'set-1000': 'set-large',
+  'zset-10': 'zset-small',
+  'zset-100': 'zset-medium',
+  'zset-1000': 'zset-large',
+}
+
+function canonicalProfile(value) {
+  const raw = String(value || '')
+  return valueShapeToProfile[raw] || raw
+}
+
 const serverDefs = {
   redis: {
     label: 'redis',
@@ -535,7 +555,7 @@ function scanCliHistory(profile) {
     try {
       const load = JSON.parse(readFileSync(loadPath, 'utf8'))
       const get = JSON.parse(readFileSync(getPath, 'utf8'))
-      if (load.value_shape !== profile || get.value_shape !== profile) continue
+      if (canonicalProfile(load.value_shape) !== profile || canonicalProfile(get.value_shape) !== profile) continue
       const key = normalizeServerLabel(load.server)
       if (!key) continue
       best[key] = mergeBest(best[key], load, get, 'cli')
@@ -550,11 +570,35 @@ function scanCliHistory(profile) {
 function bestResultsForProfile(profile) {
   const result = scanCliHistory(profile)
   const saved = loadSavedHistory()
-  const profileSaved = saved[profile] || {}
   const cutoff = resetCutoff(profile)
+
+  const matchingSaved = Object.entries(saved)
+    .filter(([rawProfile]) => canonicalProfile(rawProfile) === profile)
+    .map(([, records]) => records || {})
+
   const migratedSaved = {
-    redis: profileSaved.redis || null,
-    snug: mergeLegacySnugHistory(profileSaved),
+    redis: matchingSaved.reduce((best, records) => {
+      const record = records.redis
+      if (!record) return best
+      if (!best) return { ...record }
+      best.bestSet = Math.max(best.bestSet || 0, record.bestSet || 0)
+      best.bestGet = Math.max(best.bestGet || 0, record.bestGet || 0)
+      const values = [best.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
+      best.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
+      best.runs = Math.max(best.runs || 0, record.runs || 0)
+      return best
+    }, null),
+    snug: matchingSaved.reduce((best, records) => {
+      const record = mergeLegacySnugHistory(records)
+      if (!record) return best
+      if (!best) return { ...record }
+      best.bestSet = Math.max(best.bestSet || 0, record.bestSet || 0)
+      best.bestGet = Math.max(best.bestGet || 0, record.bestGet || 0)
+      const values = [best.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
+      best.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
+      best.runs = Math.max(best.runs || 0, record.runs || 0)
+      return best
+    }, null),
   }
 
   for (const key of ['redis', 'snug']) {
@@ -581,7 +625,7 @@ function bestResultsForProfile(profile) {
 }
 
 function recordCompletedResult(load, get) {
-  const profile = load?.value_shape
+  const profile = canonicalProfile(load?.value_shape)
   const key = normalizeServerLabel(load?.server)
   if (!profile || !key) return
 
@@ -1039,8 +1083,9 @@ ipcMain.handle('db:command', (_event, request = {}) => {
 })
 
 ipcMain.handle('history:get', (_event, profile) => {
-  if (!profiles.has(String(profile))) return emptyBest()
-  return bestResultsForProfile(String(profile))
+  const normalized = canonicalProfile(profile)
+  if (!profiles.has(normalized)) return emptyBest()
+  return bestResultsForProfile(normalized)
 })
 
 ipcMain.handle('history:reset', (_event, profile) => {
