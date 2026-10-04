@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import type { BenchmarkConfig, Job } from './types'
+import MatrixCharts from './MatrixCharts'
 
 type ServerKind = 'redis' | 'snug'
 type Profile = readonly [string, string]
@@ -397,6 +398,8 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
           )}
         </div>
       </div>
+
+      <MatrixCharts profiles={profiles} />
 
       {(running || rows.length > 0) && (
         <>
