@@ -2038,3 +2038,101 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
     min-height: 260px;
   }
 }
+
+
+.matrix-chart-card.expandable {
+  cursor: zoom-in;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.matrix-chart-card.expandable:hover {
+  border-color: #3b4650;
+  background: #11171c;
+  transform: translateY(-1px);
+}
+.matrix-chart-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(5, 8, 11, .88);
+  backdrop-filter: blur(8px);
+}
+.matrix-chart-modal-inner {
+  position: relative;
+  width: min(1400px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+}
+.matrix-chart-modal-inner .matrix-chart-card {
+  width: 100%;
+  min-height: min(82vh, 900px);
+  padding: 22px;
+  border-color: #36414a;
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+}
+.matrix-chart-modal-inner .matrix-chart-head strong {
+  font-size: 16px;
+}
+.matrix-chart-modal-inner .matrix-chart-head span {
+  font-size: 11px;
+}
+.matrix-chart-modal-inner .matrix-radar {
+  max-height: none;
+  min-height: 70vh;
+}
+.matrix-chart-modal-inner .matrix-memory-chart {
+  gap: 12px;
+}
+.matrix-chart-modal-inner .matrix-memory-row {
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 14px;
+}
+.matrix-chart-modal-inner .matrix-memory-row > strong,
+.matrix-chart-modal-inner .matrix-memory-line b,
+.matrix-chart-modal-inner .matrix-memory-line > span {
+  font-size: 11px;
+}
+.matrix-chart-modal-inner .matrix-memory-line > div {
+  height: 11px;
+}
+.matrix-chart-modal-close {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 12px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3a434b;
+  border-radius: 9px;
+  background: #12181d;
+  color: #dfe5ea;
+  font-size: 24px;
+  line-height: 1;
+}
+.matrix-chart-modal-close:hover {
+  border-color: #ff7a1a;
+  color: #ff9b55;
+}
+@media (max-width: 720px) {
+  .matrix-chart-modal {
+    padding: 10px;
+  }
+  .matrix-chart-modal-inner {
+    width: 100%;
+    max-height: 97vh;
+  }
+  .matrix-chart-modal-inner .matrix-chart-card {
+    min-height: auto;
+    padding: 14px;
+  }
+  .matrix-chart-modal-inner .matrix-radar {
+    min-height: 62vh;
+  }
+  .matrix-chart-modal-inner .matrix-memory-row {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+}
