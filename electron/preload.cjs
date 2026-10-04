@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('snugBench', {
     return () => ipcRenderer.removeListener('server:update', listener)
   },
   bestResults: profile => ipcRenderer.invoke('history:get', profile),
+  allBestResults: () => ipcRenderer.invoke('history:get-all'),
   resetBestResults: profile => ipcRenderer.invoke('history:reset', profile),
   onHistoryUpdate: callback => {
     const listener = (_event, payload) => callback(payload)
