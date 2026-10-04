@@ -485,3 +485,76 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   opacity: .5;
   cursor: not-allowed;
 }
+
+
+.best-list.all-profiles {
+  align-content: start;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.best-profile-group {
+  border: 1px solid #252a30;
+  border-radius: 12px;
+  padding: 10px;
+  background: #0c1015;
+}
+
+.best-profile-group.selected {
+  border-color: #58616d;
+  box-shadow: inset 0 0 0 1px #353d47;
+}
+
+.best-profile-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.best-profile-title strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.best-profile-title span {
+  color: #69737e;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.best-profile-servers {
+  display: grid;
+  gap: 7px;
+}
+
+.best-result-card.compact {
+  padding: 9px 10px;
+  border-radius: 9px;
+}
+
+.best-result-card.compact .best-result-title {
+  margin-bottom: 7px;
+  gap: 7px;
+}
+
+.best-result-card.compact .best-result-title strong {
+  font-size: 11px;
+}
+
+.best-result-card.compact .best-result-title small {
+  margin-left: auto;
+  color: #69737e;
+  font-size: 9px;
+}
+
+.best-result-card.compact dl {
+  gap: 5px;
+}
+
+.best-result-card.compact dt,
+.best-result-card.compact dd {
+  font-size: 10px;
+}
