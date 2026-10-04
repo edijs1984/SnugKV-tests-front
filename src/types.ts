@@ -87,3 +87,6 @@ export type ProfileBestResults = {
   'snug-raw': BestServerResult | null
   'snug-opt': BestServerResult | null
 }
+
+
+export type AllProfileBestResults = Record<string, ProfileBestResults>
