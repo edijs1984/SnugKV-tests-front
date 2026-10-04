@@ -216,7 +216,9 @@ function normalizeServerLabel(label) {
   const value = String(label || '').toLowerCase().replace(/_/g, '-')
   if (value === 'redis') return 'redis'
   if (value === 'snug-raw') return 'snug-raw'
-  if (value === 'snug-opt' || value === 'snug-mod') return 'snug-opt'
+  // "snug" is the canonical server label emitted by much of the benchmark
+  // tooling. Treat it as optimized/adaptive SnugKV for history purposes.
+  if (value === 'snug' || value === 'snug-opt' || value === 'snug-mod') return 'snug-opt'
   return null
 }
 
