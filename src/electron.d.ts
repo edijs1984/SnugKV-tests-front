@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, AllProfileBestResults, OptimizerMode } from './types'
 
 export {}
 
@@ -15,6 +15,7 @@ declare global {
       stopServer(): Promise<ServerStatus>
       onServerUpdate(callback: (status: ServerStatus) => void): () => void
       bestResults(profile: string): Promise<ProfileBestResults>
+      allBestResults(): Promise<AllProfileBestResults>
       resetBestResults(profile: string): Promise<ProfileBestResults>
       onHistoryUpdate(callback: (payload: { profile: string; best: ProfileBestResults }) => void): () => void
     }
