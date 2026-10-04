@@ -45,6 +45,55 @@ const speed = (n: number) => `${nf.format(Math.round(n))}/s`
 const us = (ns: number) => `${(ns / 1000).toFixed(2)} μs`
 const bytes = (n: number) => nf.format(Math.round(n))
 
+function historyServerKey(label: string): keyof ProfileBestResults | null {
+  const value = String(label || '').toLowerCase().replace(/_/g, '-')
+  if (value === 'redis') return 'redis'
+  if (value === 'snug-raw') return 'snug-raw'
+  if (value === 'snug' || value === 'snug-opt' || value === 'snug-mod') return 'snug-opt'
+  return null
+}
+
+function mergeCompletedJobIntoBests(
+  previous: AllProfileBestResults,
+  job: Job,
+): AllProfileBestResults {
+  if (job.status !== 'done' || !job.results || !job.config) return previous
+
+  const profile = job.config.profile
+  const key = historyServerKey(job.results.load.server || job.config.server)
+  if (!key) return previous
+
+  const currentProfile: ProfileBestResults = previous[profile] ?? {
+    redis: null,
+    'snug-raw': null,
+    'snug-opt': null,
+  }
+  const current = currentProfile[key]
+  const load = job.results.load
+  const get = job.results.get
+  const bpk = Number(load.bytes_per_key_delta)
+
+  const nextRecord = {
+    bestSet: Math.max(current?.bestSet ?? 0, Number(load.ops_per_second) || 0),
+    bestGet: Math.max(current?.bestGet ?? 0, Number(get.ops_per_second) || 0),
+    lowestBytesPerKey:
+      Number.isFinite(bpk) && bpk > 0
+        ? Math.min(current?.lowestBytesPerKey ?? Number.POSITIVE_INFINITY, bpk)
+        : current?.lowestBytesPerKey ?? Number.POSITIVE_INFINITY,
+    runs: (current?.runs ?? 0) + 1,
+    lastUpdated: new Date().toISOString(),
+    source: 'electron' as const,
+  }
+
+  return {
+    ...previous,
+    [profile]: {
+      ...currentProfile,
+      [key]: nextRecord,
+    },
+  }
+}
+
 function App() {
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
@@ -85,6 +134,13 @@ function App() {
   useEffect(() => {
     const offBench = window.snugBench.onUpdate((next: Job) => {
       setJob(next)
+      if (next.status === 'done' && next.results && next.config) {
+        setAllBest(prev => mergeCompletedJobIntoBests(prev, next))
+        if (next.config.profile === config.profile) {
+          window.snugBench.bestResults(next.config.profile).then(setBest).catch(() => {})
+        }
+        window.snugBench.allBestResults().then(setAllBest).catch(() => {})
+      }
       if (next.status !== 'running') setBusy(false)
     })
     const offServer = window.snugBench.onServerUpdate((next: ServerStatus) => {
