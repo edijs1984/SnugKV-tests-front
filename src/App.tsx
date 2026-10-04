@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, AllProfileBestResults } from './types'
 
 const profiles = [
   ['cache-json', 'Cached request/response JSON · 1024 B'],
@@ -7,10 +7,23 @@ const profiles = [
   ['api-json', 'API JSON · 768 B'],
   ['counter', 'Counter · 10 B'],
   ['uuid', 'UUID · 36 B'],
+  ['ulid', 'ULID · 26 B'],
   ['text', 'Application text · 256 B'],
   ['repetitive', 'Compressible control · 256 B'],
   ['compressed', 'Already-compressed control · 256 B'],
   ['random', 'Incompressible control · 256 B'],
+  ['hash-small', 'Hash · 10 fields'],
+  ['hash-medium', 'Hash · 100 fields'],
+  ['hash-large', 'Hash · 1,000 fields'],
+  ['list-small', 'List · 10 items'],
+  ['list-medium', 'List · 100 items'],
+  ['list-large', 'List · 1,000 items'],
+  ['set-small', 'Set · 10 members'],
+  ['set-medium', 'Set · 100 members'],
+  ['set-large', 'Set · 1,000 members'],
+  ['zset-small', 'Sorted set · 10 members'],
+  ['zset-medium', 'Sorted set · 100 members'],
+  ['zset-large', 'Sorted set · 1,000 members'],
 ]
 
 const initial: BenchmarkConfig = {
@@ -47,9 +60,11 @@ function App() {
     'snug-raw': null,
     'snug-opt': null,
   })
+  const [allBest, setAllBest] = useState<AllProfileBestResults>({})
 
   useEffect(() => {
     window.snugBench.bestResults(config.profile).then(setBest)
+    window.snugBench.allBestResults().then(setAllBest)
   }, [config.profile])
 
   const command = useMemo(() => {
@@ -81,6 +96,7 @@ function App() {
     })
     const offHistory = window.snugBench.onHistoryUpdate(payload => {
       if (payload.profile === config.profile) setBest(payload.best)
+      setAllBest(prev => ({ ...prev, [payload.profile]: payload.best }))
     })
     window.snugBench.serverStatus().then(next => {
       setServerStatus(next)
@@ -145,6 +161,7 @@ function App() {
     try {
       const next = await window.snugBench.resetBestResults(config.profile)
       setBest(next)
+      setAllBest(prev => ({ ...prev, [config.profile]: next }))
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -472,44 +489,64 @@ function App() {
         <aside className="best-sidebar">
           <div className="best-sidebar-head">
             <div>
-              <h2>Best results</h2>
-              <span>{selectedProfileLabel}</span>
+              <h2>All-time bests</h2>
+              <span>All benchmark types · selected profile highlighted</span>
             </div>
             <div className="best-head-actions">
               <button className="reset-bests-btn" disabled={resettingBest} onClick={resetProfileBests}>
-                {resettingBest ? 'Resetting…' : 'Reset bests'}
+                {resettingBest ? 'Resetting…' : 'Reset selected'}
               </button>
               <button className="copy-all-btn" onClick={copyProfileBests}>
                 <span>⧉</span>
-                {bestCopied ? 'Copied' : 'Copy all'}
+                {bestCopied ? 'Copied' : 'Copy selected'}
               </button>
             </div>
           </div>
 
-          <div className="best-list">
-            {([
-              ['redis', 'Redis'],
-              ['snug-raw', 'SnugKV raw'],
-              ['snug-opt', 'SnugKV opt'],
-            ] as const).map(([key, label]) => {
-              const result = best[key]
+          <div className="best-list all-profiles">
+            {profiles.map(([profileKey, profileLabel]) => {
+              const profileBest = allBest[profileKey] ?? {
+                redis: null,
+                'snug-raw': null,
+                'snug-opt': null,
+              }
+              const hasAny = Boolean(profileBest.redis || profileBest['snug-raw'] || profileBest['snug-opt'])
               return (
-                <article className="best-result-card" key={key}>
-                  <div className="best-result-title">
-                    <span className={`result-dot ${key}`} />
-                    <strong>{label}</strong>
+                <section
+                  className={profileKey === config.profile ? 'best-profile-group selected' : 'best-profile-group'}
+                  key={profileKey}
+                >
+                  <div className="best-profile-title">
+                    <strong>{profileLabel}</strong>
+                    {!hasAny && <span>No runs yet</span>}
                   </div>
-                  {result ? (
-                    <dl>
-                      <div><dt>Best SET</dt><dd>{nf.format(Math.round(result.bestSet))} /s</dd></div>
-                      <div><dt>Best GET</dt><dd>{nf.format(Math.round(result.bestGet))} /s</dd></div>
-                      <div><dt>Lowest B/key</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'} B</dd></div>
-                      <div><dt>Runs</dt><dd>{result.runs}</dd></div>
-                    </dl>
-                  ) : (
-                    <div className="no-best">No recorded result</div>
+                  {hasAny && (
+                    <div className="best-profile-servers">
+                      {([
+                        ['redis', 'Redis'],
+                        ['snug-raw', 'Snug raw'],
+                        ['snug-opt', 'Snug opt'],
+                      ] as const).map(([key, label]) => {
+                        const result = profileBest[key]
+                        if (!result) return null
+                        return (
+                          <article className="best-result-card compact" key={key}>
+                            <div className="best-result-title">
+                              <span className={`result-dot ${key}`} />
+                              <strong>{label}</strong>
+                              <small>{result.runs} run{result.runs === 1 ? '' : 's'}</small>
+                            </div>
+                            <dl>
+                              <div><dt>SET/WRITE</dt><dd>{nf.format(Math.round(result.bestSet))}/s</dd></div>
+                              <div><dt>GET/READ</dt><dd>{nf.format(Math.round(result.bestGet))}/s</dd></div>
+                              <div><dt>Lowest B/item</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'}</dd></div>
+                            </dl>
+                          </article>
+                        )
+                      })}
+                    </div>
                   )}
-                </article>
+                </section>
               )
             })}
           </div>
