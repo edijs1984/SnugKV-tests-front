@@ -149,10 +149,10 @@ function polygonPoints(data: RadarDatum[], key: 'redis' | 'snug', cx: number, cy
   }).join(' ')
 }
 
-function RadarChart({ title, subtitle, data }: { title: string; subtitle: string; data: RadarDatum[] }) {
+function RadarChart({ title, subtitle, data, onExpand }: { title: string; subtitle: string; data: RadarDatum[]; onExpand?: () => void }) {
   if (data.length < 3) {
     return (
-      <div className="matrix-chart-card matrix-chart-empty">
+      <div className={`matrix-chart-card matrix-chart-empty${onExpand ? ' expandable' : ''}`} onClick={onExpand}>
         <div className="matrix-chart-head"><div><strong>{title}</strong><span>{subtitle}</span></div></div>
         <p>Run at least three comparable profiles on Redis and SnugKV to draw this chart.</p>
       </div>
@@ -166,7 +166,7 @@ function RadarChart({ title, subtitle, data }: { title: string; subtitle: string
   const levels = [0.25, 0.5, 0.75, 1]
 
   return (
-    <div className="matrix-chart-card">
+    <div className={`matrix-chart-card${onExpand ? ' expandable' : ''}`} onClick={onExpand}>
       <div className="matrix-chart-head">
         <div><strong>{title}</strong><span>{subtitle}</span></div>
         <div className="matrix-chart-legend">
@@ -221,7 +221,7 @@ function RadarChart({ title, subtitle, data }: { title: string; subtitle: string
   )
 }
 
-function MemoryChart({ grouped }: { grouped: Map<string, FamilyBest> }) {
+function MemoryChart({ grouped, onExpand }: { grouped: Map<string, FamilyBest>; onExpand?: () => void }) {
   const rows = Array.from(grouped.entries()).map(([id, value]) => ({
     id,
     label: familyLabel(id),
@@ -234,7 +234,7 @@ function MemoryChart({ grouped }: { grouped: Map<string, FamilyBest> }) {
   const max = Math.max(...rows.flatMap(row => [row.redis, row.snug]), 1)
 
   return (
-    <div className="matrix-chart-card matrix-memory-card">
+    <div className={`matrix-chart-card matrix-memory-card${onExpand ? ' expandable' : ''}`} onClick={onExpand}>
       <div className="matrix-chart-head">
         <div><strong>RAM used by data type</strong><span>Lowest recorded bytes per logical unit</span></div>
         <div className="matrix-chart-legend">
@@ -273,6 +273,7 @@ function MemoryChart({ grouped }: { grouped: Map<string, FamilyBest> }) {
 
 export default function MatrixCharts({ profiles }: Props) {
   const [history, setHistory] = useState<Record<string, ProfileBestResults>>({})
+  const [fullscreen, setFullscreen] = useState<'set' | 'get' | 'memory' | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -291,17 +292,45 @@ export default function MatrixCharts({ profiles }: Props) {
     }
   }, [profiles])
 
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [fullscreen])
+
   const grouped = useMemo(() => aggregate(history, profiles), [history, profiles])
   const setData = useMemo(() => radarData(grouped, 'set'), [grouped])
   const getData = useMemo(() => radarData(grouped, 'get'), [grouped])
 
+  const fullscreenChart = fullscreen === 'set'
+    ? <RadarChart title="SET / WRITE performance" subtitle="Best recorded result per data type" data={setData} />
+    : fullscreen === 'get'
+      ? <RadarChart title="GET / READ performance" subtitle="Best recorded result per data type" data={getData} />
+      : fullscreen === 'memory'
+        ? <MemoryChart grouped={grouped} />
+        : null
+
   return (
-    <div className="matrix-charts">
-      <div className="matrix-radar-grid-wrap">
-        <RadarChart title="SET / WRITE performance" subtitle="Best recorded result per data type" data={setData} />
-        <RadarChart title="GET / READ performance" subtitle="Best recorded result per data type" data={getData} />
+    <>
+      <div className="matrix-charts">
+        <div className="matrix-radar-grid-wrap">
+          <RadarChart title="SET / WRITE performance" subtitle="Best recorded result per data type" data={setData} onExpand={() => setFullscreen('set')} />
+          <RadarChart title="GET / READ performance" subtitle="Best recorded result per data type" data={getData} onExpand={() => setFullscreen('get')} />
+        </div>
+        <MemoryChart grouped={grouped} onExpand={() => setFullscreen('memory')} />
       </div>
-      <MemoryChart grouped={grouped} />
-    </div>
+
+      {fullscreen && (
+        <div className="matrix-chart-modal" role="dialog" aria-modal="true" aria-label="Expanded benchmark chart" onClick={() => setFullscreen(null)}>
+          <div className="matrix-chart-modal-inner" onClick={event => event.stopPropagation()}>
+            <button className="matrix-chart-modal-close" type="button" aria-label="Close fullscreen chart" onClick={() => setFullscreen(null)}>×</button>
+            {fullscreenChart}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
