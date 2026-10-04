@@ -310,6 +310,72 @@ function scanCliHistory(profile) {
   return best
 }
 
+function scanElectronRunHistory(profile) {
+  const best = emptyBest()
+  const root = join(app.getPath('userData'), 'runs')
+  const cutoff = resetCutoff(profile)
+  if (!existsSync(root)) return best
+
+  let dirs = []
+  try {
+    dirs = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory())
+  } catch {
+    return best
+  }
+
+  for (const entry of dirs) {
+    const dir = join(root, entry.name)
+    if (cutoff > 0) {
+      try {
+        if (statSync(dir).mtimeMs <= cutoff) continue
+      } catch {
+        continue
+      }
+    }
+
+    const loadPath = join(dir, 'load.json')
+    const getPath = join(dir, 'get.json')
+    if (!existsSync(loadPath) || !existsSync(getPath)) continue
+
+    try {
+      const load = JSON.parse(readFileSync(loadPath, 'utf8'))
+      const get = JSON.parse(readFileSync(getPath, 'utf8'))
+      if (canonicalProfile(load.value_shape) !== profile || canonicalProfile(get.value_shape) !== profile) continue
+      const key = normalizeServerLabel(load.server)
+      if (!key) continue
+      best[key] = mergeBest(best[key], load, get, 'electron')
+    } catch {
+      // Ignore incomplete runs.
+    }
+  }
+
+  return best
+}
+
+function mergeBestResults(target, source) {
+  for (const key of ['redis', 'snug-raw', 'snug-opt']) {
+    const record = source[key]
+    if (!record) continue
+    const current = target[key]
+    if (!current) {
+      target[key] = { ...record }
+      continue
+    }
+
+    current.bestSet = Math.max(current.bestSet || 0, record.bestSet || 0)
+    current.bestGet = Math.max(current.bestGet || 0, record.bestGet || 0)
+    const values = [current.lowestBytesPerKey, record.lowestBytesPerKey].filter(v => Number.isFinite(v) && v > 0)
+    current.lowestBytesPerKey = values.length ? Math.min(...values) : Number.POSITIVE_INFINITY
+    current.runs = Math.max(current.runs || 0, record.runs || 0)
+
+    if (record.lastUpdated && (!current.lastUpdated || record.lastUpdated > current.lastUpdated)) {
+      current.lastUpdated = record.lastUpdated
+      current.source = record.source
+    }
+  }
+  return target
+}
+
 function bestResultsAllProfiles() {
   const result = {}
   for (const profile of profileNames) {
@@ -330,6 +396,7 @@ function bestResultsAllProfiles() {
 
 function bestResultsForProfile(profile) {
   const result = scanCliHistory(profile)
+  mergeBestResults(result, scanElectronRunHistory(profile))
   const saved = loadSavedHistory()
   const cutoff = resetCutoff(profile)
 
