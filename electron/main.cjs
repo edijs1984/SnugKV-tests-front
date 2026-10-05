@@ -897,11 +897,11 @@ function diagnosticsSummary(diagnostics) {
     `server: ${diagnostics.server.kind} pid=${diagnostics.server.pid ?? 'n/a'}`,
     `samples: ${diagnostics.processSamples.length}`,
   ]
-  const after = diagnostics.snapshots.after
-  if (after?.process?.rss_kb != null) lines.push(`process_rss_after: ${after.process.rss_kb} kB`)
+  const after = diagnostics.snapshots.afterMeasured
+  if (after?.process?.rss_kb != null) lines.push(`process_rss_after_measured: ${after.process.rss_kb} kB`)
   if (after?.process?.peak_rss_kb != null) lines.push(`process_peak_rss: ${after.process.peak_rss_kb} kB`)
   if (after?.snug_stats?.stdout) {
-    lines.push('', '--- SNUG.STATS ---', after.snug_stats.stdout)
+    lines.push('', '--- SNUG.STATS (after measured run) ---', after.snug_stats.stdout)
   }
   if (diagnostics.profiling.cpu?.output) {
     lines.push('', '--- CPU PPROF TOP ---', diagnostics.profiling.cpu.output)
@@ -1631,7 +1631,11 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       job.error = error instanceof Error ? error.message : String(error)
     }
 
+    const diagnosticsAfterMeasured = diagnosticSnapshot(c)
     const profilingReplay = await runSnugProfileReplay(c, out)
+    const diagnosticsAfterProfilingReplay = normalizeServerLabel(c.server) === 'snug'
+      ? diagnosticSnapshot(c)
+      : null
     const heap = normalizeServerLabel(c.server) === 'snug'
       ? await startPprofTop('heap')
       : { ok: false, skipped: true, reason: 'not snug' }
@@ -1671,7 +1675,8 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       },
       snapshots: {
         before: diagnosticsBefore,
-        after: diagnosticSnapshot(c),
+        afterMeasured: diagnosticsAfterMeasured,
+        afterProfilingReplay: diagnosticsAfterProfilingReplay,
       },
       processSamples,
       profiling: {
