@@ -844,6 +844,94 @@ function startPprofTop(config, mode, seconds = 5) {
   })
 }
 
+async function runMeasuredRepetition(config, parentOut, index) {
+  const out = join(parentOut, `repeat-${index}`)
+  mkdirSync(out, { recursive: true })
+  const args = [
+    scriptPath(),
+    config.profile,
+    '-p', String(config.port),
+    '-h', config.host,
+    '-s', config.server,
+    '-k', String(config.keys),
+    '-g', String(config.getOps),
+    '-w', String(config.workers),
+    '-P', String(config.pipeline),
+    '--settle-ms', String(config.settleMs),
+    '--seed', String(config.seed),
+    '-o', out,
+  ]
+
+  const startedAt = new Date().toISOString()
+  const result = await new Promise(resolveRun => {
+    const child = spawn(bashPath(), args, {
+      cwd: snugRepo(),
+      env: {
+        ...runtimeEnv(),
+        SNUGKV_GO_BIN: goPath(),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout?.on('data', chunk => { output += chunk.toString() })
+    child.stderr?.on('data', chunk => { output += chunk.toString() })
+    child.once('error', error => resolveRun({
+      ok: false,
+      exitCode: null,
+      output,
+      error: error.message,
+    }))
+    child.once('close', code => resolveRun({
+      ok: code === 0,
+      exitCode: code,
+      output: output.trim(),
+    }))
+  })
+
+  let load = null
+  let get = null
+  try { load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8')) } catch {}
+  try { get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8')) } catch {}
+
+  return {
+    index,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    runDir: out,
+    command: ['bash', ...args].join(' '),
+    result,
+    load,
+    get,
+  }
+}
+
+function summarizeRepetitions(repetitions) {
+  const valid = repetitions.filter(item => item?.load?.ops_per_second && item?.get?.ops_per_second)
+  const summarizeMetric = (path) => {
+    const values = valid.map(item => {
+      const value = path === 'load'
+        ? Number(item.load.ops_per_second)
+        : Number(item.get.ops_per_second)
+      return { index: item.index, value }
+    }).sort((a, b) => a.value - b.value)
+    if (!values.length) return null
+    const middle = values[Math.floor(values.length / 2)]
+    return {
+      min: values[0],
+      median: middle,
+      max: values[values.length - 1],
+      spread_pct: values[0].value > 0
+        ? ((values[values.length - 1].value - values[0].value) / values[0].value) * 100
+        : null,
+    }
+  }
+  return {
+    count: valid.length,
+    write_ops_per_second: summarizeMetric('load'),
+    read_ops_per_second: summarizeMetric('get'),
+  }
+}
+
 async function runSnugProfileReplay(config, parentOut) {
   if (normalizeServerLabel(config.server) !== 'snug') {
     return {
@@ -917,6 +1005,17 @@ function diagnosticsSummary(diagnostics) {
     `server: ${diagnostics.server.kind} pid=${diagnostics.server.pid ?? 'n/a'}`,
     `samples: ${diagnostics.processSamples.length}`,
   ]
+  const reps = diagnostics.repetitionSummary
+  if (reps?.write_ops_per_second) {
+    lines.push(
+      `write_repetitions: min=${Math.round(reps.write_ops_per_second.min.value)} median=${Math.round(reps.write_ops_per_second.median.value)} max=${Math.round(reps.write_ops_per_second.max.value)} spread=${reps.write_ops_per_second.spread_pct.toFixed(2)}%`
+    )
+  }
+  if (reps?.read_ops_per_second) {
+    lines.push(
+      `read_repetitions: min=${Math.round(reps.read_ops_per_second.min.value)} median=${Math.round(reps.read_ops_per_second.median.value)} max=${Math.round(reps.read_ops_per_second.max.value)} spread=${reps.read_ops_per_second.spread_pct.toFixed(2)}%`
+    )
+  }
   const after = diagnostics.snapshots.afterMeasured
   if (after?.process?.rss_kb != null) lines.push(`process_rss_after_measured: ${after.process.rss_kb} kB`)
   if (after?.process?.peak_rss_kb != null) lines.push(`process_peak_rss: ${after.process.peak_rss_kb} kB`)
@@ -1651,6 +1750,35 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       job.error = error instanceof Error ? error.message : String(error)
     }
 
+    const measuredRepetitions = [{
+      index: 1,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+      runDir: out,
+      command: job.command,
+      result: { ok: job.status === 'done', exitCode: code },
+      load: job.results?.load ?? null,
+      get: job.results?.get ?? null,
+    }]
+
+    if (job.status === 'done') {
+      for (let repeatIndex = 2; repeatIndex <= 3; repeatIndex++) {
+        job.log += `\n===== MEASURED REPETITION ${repeatIndex}/3 =====\n`
+        emit(job)
+        const repeated = await runMeasuredRepetition(c, out, repeatIndex)
+        measuredRepetitions.push(repeated)
+        if (repeated.result?.output) {
+          job.log += repeated.result.output + '\n'
+          if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
+        }
+        if (!repeated.result?.ok) {
+          job.log += `repetition ${repeatIndex} failed: ${repeated.result?.error || repeated.result?.exitCode || 'unknown error'}\n`
+          break
+        }
+      }
+    }
+
+    const repetitionSummary = summarizeRepetitions(measuredRepetitions)
     const diagnosticsAfterMeasured = diagnosticSnapshot(c)
     const profilingReplay = await runSnugProfileReplay(c, out)
     const diagnosticsAfterProfilingReplay = normalizeServerLabel(c.server) === 'snug'
@@ -1699,6 +1827,8 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
         afterProfilingReplay: diagnosticsAfterProfilingReplay,
       },
       processSamples,
+      measuredRepetitions,
+      repetitionSummary,
       profiling: {
         cpu: profilingReplay.cpu,
         heap,
