@@ -707,6 +707,148 @@ function recordCompletedResult(load, get) {
   }
 }
 
+
+function runCliDiagnostic(host, port, args, timeout = 8000) {
+  try {
+    const result = spawnSync(redisCliPath(), ['--raw', '-h', host, '-p', String(port), ...args.map(String)], {
+      env: runtimeEnv(),
+      encoding: 'utf8',
+      timeout,
+      maxBuffer: 16 * 1024 * 1024,
+    })
+    const stdout = String(result.stdout || '').replace(/\r/g, '').trim()
+    const stderr = String(result.stderr || '').trim()
+    return {
+      ok: result.status === 0 && !stdout.startsWith('ERR '),
+      exitCode: Number.isInteger(result.status) ? result.status : null,
+      stdout,
+      stderr,
+    }
+  } catch (error) {
+    return { ok: false, exitCode: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function readProcMetrics(pid) {
+  if (!pid || process.platform !== 'linux') return null
+  try {
+    const status = readFileSync(`/proc/${pid}/status`, 'utf8')
+    const io = readFileSync(`/proc/${pid}/io`, 'utf8')
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const values = {}
+    for (const line of status.split('\n')) {
+      const m = line.match(/^([A-Za-z_]+):\s+([0-9]+)/)
+      if (m) values[m[1]] = Number(m[2])
+    }
+    const ioValues = {}
+    for (const line of io.split('\n')) {
+      const m = line.match(/^([a-z_]+):\s+([0-9]+)/)
+      if (m) ioValues[m[1]] = Number(m[2])
+    }
+    const close = stat.lastIndexOf(')')
+    const fields = close >= 0 ? stat.slice(close + 2).trim().split(/\s+/) : []
+    return {
+      rss_kb: values.VmRSS ?? null,
+      peak_rss_kb: values.VmHWM ?? null,
+      virtual_kb: values.VmSize ?? null,
+      threads: values.Threads ?? null,
+      voluntary_context_switches: values.voluntary_ctxt_switches ?? null,
+      nonvoluntary_context_switches: values.nonvoluntary_ctxt_switches ?? null,
+      cpu_user_ticks: fields.length > 12 ? Number(fields[11]) : null,
+      cpu_system_ticks: fields.length > 12 ? Number(fields[12]) : null,
+      read_bytes: ioValues.read_bytes ?? null,
+      write_bytes: ioValues.write_bytes ?? null,
+      read_syscalls: ioValues.syscr ?? null,
+      write_syscalls: ioValues.syscw ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function systemMetrics() {
+  return {
+    loadavg: os.loadavg(),
+    free_memory_bytes: os.freemem(),
+    total_memory_bytes: os.totalmem(),
+    cpus: os.cpus().length,
+  }
+}
+
+function diagnosticSnapshot(config) {
+  const base = {
+    capturedAt: new Date().toISOString(),
+    process: readProcMetrics(activeServer?.child?.pid),
+    system: systemMetrics(),
+    dbsize: runCliDiagnostic(config.host, config.port, ['DBSIZE']),
+    role: runCliDiagnostic(config.host, config.port, ['ROLE']),
+    info_memory: runCliDiagnostic(config.host, config.port, ['INFO', 'memory']),
+    info_stats: runCliDiagnostic(config.host, config.port, ['INFO', 'stats']),
+    info_persistence: runCliDiagnostic(config.host, config.port, ['INFO', 'persistence']),
+    info_replication: runCliDiagnostic(config.host, config.port, ['INFO', 'replication']),
+    info_commandstats: runCliDiagnostic(config.host, config.port, ['INFO', 'commandstats']),
+  }
+  if (normalizeServerLabel(config.server) === 'snug') {
+    base.snug_stats = runCliDiagnostic(config.host, config.port, ['SNUG.STATS'])
+  }
+  return base
+}
+
+function startPprofTop(mode, seconds = 5) {
+  if (normalizeServerLabel(activeServer?.label) !== 'snug') {
+    return Promise.resolve({ ok: false, skipped: true, reason: 'not snug' })
+  }
+
+  let args
+  if (mode === 'cpu') {
+    args = ['tool', 'pprof', '-top', '-nodecount=40', `http://127.0.0.1:6060/debug/pprof/profile?seconds=${seconds}`]
+  } else if (mode === 'alloc') {
+    args = ['tool', 'pprof', '-top', '-nodecount=40', '-sample_index=alloc_space', 'http://127.0.0.1:6060/debug/pprof/heap']
+  } else {
+    args = ['tool', 'pprof', '-top', '-nodecount=40', 'http://127.0.0.1:6060/debug/pprof/heap']
+  }
+
+  return new Promise(resolveTop => {
+    const child = spawn(goPath(), args, {
+      cwd: snugRepo(),
+      env: runtimeEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout?.on('data', chunk => { output += chunk.toString() })
+    child.stderr?.on('data', chunk => { output += chunk.toString() })
+    child.once('error', error => resolveTop({ ok: false, output, error: error.message }))
+    child.once('close', code => resolveTop({ ok: code === 0, exitCode: code, output: output.trim() }))
+  })
+}
+
+function diagnosticsSummary(diagnostics) {
+  const lines = [
+    '',
+    '===== DIAGNOSTICS =====',
+    `run_dir: ${diagnostics.artifacts.runDir}`,
+    `server: ${diagnostics.server.kind} pid=${diagnostics.server.pid ?? 'n/a'}`,
+    `samples: ${diagnostics.processSamples.length}`,
+  ]
+  const after = diagnostics.snapshots.after
+  if (after?.process?.rss_kb != null) lines.push(`process_rss_after: ${after.process.rss_kb} kB`)
+  if (after?.process?.peak_rss_kb != null) lines.push(`process_peak_rss: ${after.process.peak_rss_kb} kB`)
+  if (after?.snug_stats?.stdout) {
+    lines.push('', '--- SNUG.STATS ---', after.snug_stats.stdout)
+  }
+  if (diagnostics.profiling.cpu?.output) {
+    lines.push('', '--- CPU PPROF TOP ---', diagnostics.profiling.cpu.output)
+  }
+  if (diagnostics.profiling.heap?.output) {
+    lines.push('', '--- HEAP PPROF TOP ---', diagnostics.profiling.heap.output)
+  }
+  if (diagnostics.profiling.alloc?.output) {
+    lines.push('', '--- ALLOC PPROF TOP ---', diagnostics.profiling.alloc.output)
+  }
+  lines.push('===== END DIAGNOSTICS =====', '')
+  return lines.join('\n')
+}
+
 function waitForPort(host, port, timeoutMs = 10000) {
   return new Promise((resolveReady, rejectReady) => {
     const deadline = Date.now() + timeoutMs
@@ -758,7 +900,7 @@ async function killBenchmarkPorts() {
 
   if (process.platform === 'linux') {
     try {
-      await runCommand(fuserPath(), ['-k', '6390/tcp', '6383/tcp'], { env: runtimeEnv() })
+      await runCommand(fuserPath(), ['-k', '6390/tcp', '6383/tcp', '6060/tcp'], { env: runtimeEnv() })
     } catch {
       // fuser exits non-zero when no process owns a port; that is fine.
     }
@@ -805,7 +947,7 @@ async function startManagedServer(request) {
     args = [
       '-listen', `127.0.0.1:${def.port}`,
       '-admin-listen', '',
-      '-pprof-listen', '',
+      '-pprof-listen', '127.0.0.1:6060',
     ]
     args.push('-optimizer-mode', optimizerMode)
   }
@@ -1321,6 +1463,27 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     startedAt: new Date().toISOString(),
   }
 
+  const diagnosticsStartedAt = Date.now()
+  const diagnosticsBefore = diagnosticSnapshot(c)
+  const processSamples = []
+  const sampleProcess = () => {
+    const proc = readProcMetrics(activeServer?.child?.pid)
+    processSamples.push({
+      elapsed_ms: Date.now() - diagnosticsStartedAt,
+      process: proc,
+      system: systemMetrics(),
+    })
+    if (processSamples.length > 1200) processSamples.shift()
+  }
+  sampleProcess()
+  const sampleTimer = setInterval(sampleProcess, 250)
+
+  // Capture a CPU profile during the actual benchmark for SnugKV. Redis has no
+  // Go pprof endpoint, but receives the same process/INFO sampling.
+  const cpuProfilePromise = normalizeServerLabel(c.server) === 'snug'
+    ? startPprofTop('cpu', 5)
+    : Promise.resolve({ ok: false, skipped: true, reason: 'not snug' })
+
   const child = spawn(bashPath(), args, {
     cwd: snugRepo(),
     env: {
@@ -1382,7 +1545,9 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     emit(job)
   })
 
-  child.on('close', code => {
+  child.on('close', async code => {
+    clearInterval(sampleTimer)
+    sampleProcess()
     job.finishedAt = new Date().toISOString()
     activeChild = null
 
@@ -1403,6 +1568,56 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       job.status = 'failed'
       job.error = error instanceof Error ? error.message : String(error)
     }
+
+    const cpu = await cpuProfilePromise
+    const heap = normalizeServerLabel(c.server) === 'snug'
+      ? await startPprofTop('heap')
+      : { ok: false, skipped: true, reason: 'not snug' }
+    const alloc = normalizeServerLabel(c.server) === 'snug'
+      ? await startPprofTop('alloc')
+      : { ok: false, skipped: true, reason: 'not snug' }
+
+    const diagnostics = {
+      schemaVersion: 1,
+      runId: id,
+      profile: c.profile,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+      durationMs: Date.now() - diagnosticsStartedAt,
+      command: job.command,
+      config: c,
+      server: {
+        kind: normalizeServerLabel(c.server),
+        label: c.server,
+        pid: activeServer?.child?.pid ?? null,
+        optimizerMode: activeServer?.optimizerMode ?? null,
+      },
+      environment: {
+        platform: process.platform,
+        arch: process.arch,
+        node: process.version,
+        electron: process.versions.electron,
+        cpus: os.cpus().map(cpu => cpu.model),
+        totalMemoryBytes: os.totalmem(),
+      },
+      artifacts: {
+        runDir: out,
+        loadJson: join(out, 'load.json'),
+        getJson: join(out, 'get.json'),
+        diagnosticsJson: join(out, 'diagnostics.json'),
+      },
+      snapshots: {
+        before: diagnosticsBefore,
+        after: diagnosticSnapshot(c),
+      },
+      processSamples,
+      profiling: { cpu, heap, alloc },
+      benchmark: job.results ?? null,
+    }
+    job.diagnostics = diagnostics
+    writeFileSync(join(out, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2) + '\n')
+    job.log += diagnosticsSummary(diagnostics)
+    if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
 
     emit(job)
   })
