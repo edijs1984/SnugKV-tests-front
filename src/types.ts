@@ -107,7 +107,8 @@ export type BenchmarkDiagnostics = {
   }
   snapshots: {
     before: Record<string, unknown>
-    after: Record<string, unknown>
+    afterMeasured: Record<string, unknown>
+    afterProfilingReplay: Record<string, unknown> | null
   }
   processSamples: Array<{
     elapsed_ms: number
@@ -123,6 +124,18 @@ export type BenchmarkDiagnostics = {
     cpu: DiagnosticCommandResult
     heap: DiagnosticCommandResult
     alloc: DiagnosticCommandResult
+    replay: {
+      skipped: boolean
+      reason?: string
+      runDir?: string
+      keys?: number
+      getOps?: number
+      command?: string
+      replay?: DiagnosticCommandResult
+      cpu: DiagnosticCommandResult
+      load?: BenchResult | null
+      get?: BenchResult | null
+    }
   }
   benchmark: {
     load: BenchResult
