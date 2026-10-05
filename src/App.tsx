@@ -247,6 +247,7 @@ function App() {
     await navigator.clipboard.writeText(JSON.stringify({
       config: job.config ?? config,
       results: job.results,
+      diagnostics: job.diagnostics ?? null,
     }, null, 2))
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
@@ -256,7 +257,11 @@ function App() {
     if (!job?.results) return
     await window.snugBench.save({
       filename: `snugkv-${(job.config ?? config).profile}-${(job.config ?? config).server}-${Date.now()}.json`,
-      data: { config: job.config ?? config, results: job.results },
+      data: {
+        config: job.config ?? config,
+        results: job.results,
+        diagnostics: job.diagnostics ?? null,
+      },
     })
   }
 
