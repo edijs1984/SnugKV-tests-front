@@ -932,6 +932,94 @@ function summarizeRepetitions(repetitions) {
   }
 }
 
+function structuredProfileSpec(profile) {
+  const match = /^(hash|list|set|zset)-(small|medium|large)$/.exec(profile)
+  if (!match) return null
+  const cardinality = match[2] === 'small' ? 10 : match[2] === 'medium' ? 100 : 1000
+  return {
+    type: match[1],
+    cardinality,
+    valueBytes: match[1] === 'set' || match[1] === 'zset' ? 24 : 64,
+  }
+}
+
+async function runReadOnlyProfile(config, items, ops) {
+  const spec = structuredProfileSpec(config.profile)
+  const addr = `${config.host}:${config.port}`
+  const args = spec
+    ? [
+        '-server', config.server,
+        '-addr', addr,
+        '-mode', 'read',
+        '-type', spec.type,
+        '-items', String(items),
+        '-cardinality', String(spec.cardinality),
+        '-ops', String(ops),
+        '-workers', String(config.workers),
+        '-pipeline', String(config.pipeline),
+        '-value-bytes', String(spec.valueBytes),
+        '-seed', String(config.seed),
+      ]
+    : [
+        '-server', config.server,
+        '-addr', addr,
+        '-workload', 'get',
+        '-keys', String(items),
+        '-ops', String(ops),
+        '-workers', String(config.workers),
+        '-pipeline', String(config.pipeline),
+        '-value-bytes', String(config.profile === 'counter' ? 10 :
+          config.profile === 'uuid' ? 36 :
+          config.profile === 'ulid' ? 26 :
+          config.profile === 'session-json' ? 384 :
+          config.profile === 'api-json' ? 768 :
+          config.profile === 'cache-json' ? 1024 : 256),
+        '-value-shape', config.profile,
+        '-seed', String(config.seed),
+      ]
+  const command = spec ? '/tmp/redisstructurebench' : '/tmp/rediswirebench'
+
+  const cpuPromise = startPprofTop(config, 'cpu', 5)
+  const run = await new Promise(resolveRun => {
+    const child = spawn(command, args, {
+      cwd: snugRepo(),
+      env: runtimeEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout?.on('data', chunk => { output += chunk.toString() })
+    child.stderr?.on('data', chunk => { output += chunk.toString() })
+    child.once('error', error => resolveRun({
+      ok: false,
+      exitCode: null,
+      output,
+      error: error.message,
+    }))
+    child.once('close', code => resolveRun({
+      ok: code === 0,
+      exitCode: code,
+      output: output.trim(),
+    }))
+  })
+  const cpu = await cpuPromise
+
+  let result = null
+  if (run.ok && run.output) {
+    try {
+      const lines = run.output.trim().split(/\r?\n/)
+      result = JSON.parse(lines[lines.length - 1])
+    } catch {}
+  }
+
+  return {
+    command: [command, ...args].join(' '),
+    ops,
+    run,
+    result,
+    cpu,
+  }
+}
+
 async function runSnugProfileReplay(config, parentOut) {
   if (normalizeServerLabel(config.server) !== 'snug') {
     return {
@@ -984,6 +1072,20 @@ async function runSnugProfileReplay(config, parentOut) {
   try { load = JSON.parse(readFileSync(join(replayOut, 'load.json'), 'utf8')) } catch {}
   try { get = JSON.parse(readFileSync(join(replayOut, 'get.json'), 'utf8')) } catch {}
 
+  const readProfileOps = Math.min(
+    5000000,
+    Math.max(2000000, replayGetOps * 2, Number(config.getOps) || 0),
+  )
+  const readProfile = replay.ok
+    ? await runReadOnlyProfile(config, replayKeys, readProfileOps)
+    : {
+        command: '',
+        ops: readProfileOps,
+        run: { ok: false, skipped: true, reason: 'profile replay failed' },
+        result: null,
+        cpu: { ok: false, skipped: true, reason: 'profile replay failed' },
+      }
+
   return {
     skipped: false,
     runDir: replayOut,
@@ -992,6 +1094,8 @@ async function runSnugProfileReplay(config, parentOut) {
     command: ['bash', ...replayArgs].join(' '),
     replay,
     cpu,
+    readCpu: readProfile.cpu,
+    readProfile,
     load,
     get,
   }
@@ -1023,7 +1127,10 @@ function diagnosticsSummary(diagnostics) {
     lines.push('', '--- SNUG.STATS (after measured run) ---', after.snug_stats.stdout)
   }
   if (diagnostics.profiling.cpu?.output) {
-    lines.push('', '--- CPU PPROF TOP ---', diagnostics.profiling.cpu.output)
+    lines.push('', '--- LOAD CPU PPROF TOP ---', diagnostics.profiling.cpu.output)
+  }
+  if (diagnostics.profiling.replay?.readCpu?.output) {
+    lines.push('', '--- READ CPU PPROF TOP ---', diagnostics.profiling.replay.readCpu.output)
   }
   if (diagnostics.profiling.heap?.output) {
     lines.push('', '--- HEAP PPROF TOP ---', diagnostics.profiling.heap.output)
