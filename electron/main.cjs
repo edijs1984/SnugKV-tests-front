@@ -824,6 +824,71 @@ function startPprofTop(mode, seconds = 5) {
   })
 }
 
+async function runSnugProfileReplay(config, parentOut) {
+  if (normalizeServerLabel(config.server) !== 'snug') {
+    return {
+      skipped: true,
+      reason: 'not snug',
+      cpu: { ok: false, skipped: true, reason: 'not snug' },
+      output: '',
+    }
+  }
+
+  const replayOut = join(parentOut, 'profile-replay')
+  mkdirSync(replayOut, { recursive: true })
+  const replayKeys = Math.min(config.keys, 500000)
+  const replayGetOps = Math.min(config.getOps, 1000000)
+  const replayArgs = [
+    scriptPath(),
+    config.profile,
+    '-p', String(config.port),
+    '-h', config.host,
+    '-s', config.server,
+    '-k', String(replayKeys),
+    '-g', String(replayGetOps),
+    '-w', String(config.workers),
+    '-P', String(config.pipeline),
+    '--settle-ms', '0',
+    '--seed', String(config.seed),
+    '-o', replayOut,
+  ]
+
+  const cpuPromise = startPprofTop('cpu', 5)
+  const replay = await new Promise(resolveReplay => {
+    const child = spawn(bashPath(), replayArgs, {
+      cwd: snugRepo(),
+      env: {
+        ...runtimeEnv(),
+        SNUGKV_GO_BIN: goPath(),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout?.on('data', chunk => { output += chunk.toString() })
+    child.stderr?.on('data', chunk => { output += chunk.toString() })
+    child.once('error', error => resolveReplay({ ok: false, exitCode: null, output, error: error.message }))
+    child.once('close', code => resolveReplay({ ok: code === 0, exitCode: code, output: output.trim() }))
+  })
+  const cpu = await cpuPromise
+
+  let load = null
+  let get = null
+  try { load = JSON.parse(readFileSync(join(replayOut, 'load.json'), 'utf8')) } catch {}
+  try { get = JSON.parse(readFileSync(join(replayOut, 'get.json'), 'utf8')) } catch {}
+
+  return {
+    skipped: false,
+    runDir: replayOut,
+    keys: replayKeys,
+    getOps: replayGetOps,
+    command: ['bash', ...replayArgs].join(' '),
+    replay,
+    cpu,
+    load,
+    get,
+  }
+}
+
 function diagnosticsSummary(diagnostics) {
   const lines = [
     '',
@@ -1481,12 +1546,6 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   sampleProcess()
   const sampleTimer = setInterval(sampleProcess, 250)
 
-  // Capture a CPU profile during the actual benchmark for SnugKV. Redis has no
-  // Go pprof endpoint, but receives the same process/INFO sampling.
-  const cpuProfilePromise = normalizeServerLabel(c.server) === 'snug'
-    ? startPprofTop('cpu', 5)
-    : Promise.resolve({ ok: false, skipped: true, reason: 'not snug' })
-
   const child = spawn(bashPath(), args, {
     cwd: snugRepo(),
     env: {
@@ -1572,7 +1631,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       job.error = error instanceof Error ? error.message : String(error)
     }
 
-    const cpu = await cpuProfilePromise
+    const profilingReplay = await runSnugProfileReplay(c, out)
     const heap = normalizeServerLabel(c.server) === 'snug'
       ? await startPprofTop('heap')
       : { ok: false, skipped: true, reason: 'not snug' }
@@ -1615,7 +1674,12 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
         after: diagnosticSnapshot(c),
       },
       processSamples,
-      profiling: { cpu, heap, alloc },
+      profiling: {
+        cpu: profilingReplay.cpu,
+        heap,
+        alloc,
+        replay: profilingReplay,
+      },
       benchmark: job.results ?? null,
     }
     job.diagnostics = diagnostics
