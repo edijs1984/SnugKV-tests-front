@@ -729,6 +729,26 @@ function runCliDiagnostic(host, port, args, timeout = 8000) {
   }
 }
 
+function benchmarkServerPid(config) {
+  const managedPid = activeServer?.child?.pid
+  if (managedPid && Number(activeServer?.port) === Number(config.port)) {
+    return managedPid
+  }
+  if (process.platform !== 'linux') return null
+  try {
+    const result = spawnSync(fuserPath(), ['-n', 'tcp', String(config.port)], {
+      env: runtimeEnv(),
+      encoding: 'utf8',
+      timeout: 3000,
+    })
+    const combined = `${result.stdout || ''}\n${result.stderr || ''}`
+    const numbers = [...combined.matchAll(/\b(\d+)\b/g)].map(match => Number(match[1]))
+    return numbers.find(value => value > 1 && value !== Number(config.port)) ?? null
+  } catch {
+    return null
+  }
+}
+
 function readProcMetrics(pid) {
   if (!pid || process.platform !== 'linux') return null
   try {
@@ -778,7 +798,7 @@ function systemMetrics() {
 function diagnosticSnapshot(config) {
   const base = {
     capturedAt: new Date().toISOString(),
-    process: readProcMetrics(activeServer?.child?.pid),
+    process: readProcMetrics(benchmarkServerPid(config)),
     system: systemMetrics(),
     dbsize: runCliDiagnostic(config.host, config.port, ['DBSIZE']),
     role: runCliDiagnostic(config.host, config.port, ['ROLE']),
@@ -796,8 +816,8 @@ function diagnosticSnapshot(config) {
   return base
 }
 
-function startPprofTop(mode, seconds = 5) {
-  if (normalizeServerLabel(activeServer?.label) !== 'snug') {
+function startPprofTop(config, mode, seconds = 5) {
+  if (normalizeServerLabel(config?.server) !== 'snug') {
     return Promise.resolve({ ok: false, skipped: true, reason: 'not snug' })
   }
 
@@ -853,7 +873,7 @@ async function runSnugProfileReplay(config, parentOut) {
     '-o', replayOut,
   ]
 
-  const cpuPromise = startPprofTop('cpu', 5)
+  const cpuPromise = startPprofTop(config, 'cpu', 5)
   const replay = await new Promise(resolveReplay => {
     const child = spawn(bashPath(), replayArgs, {
       cwd: snugRepo(),
@@ -1535,7 +1555,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   const diagnosticsBefore = diagnosticSnapshot(c)
   const processSamples = []
   const sampleProcess = () => {
-    const proc = readProcMetrics(activeServer?.child?.pid)
+    const proc = readProcMetrics(benchmarkServerPid(c))
     processSamples.push({
       elapsed_ms: Date.now() - diagnosticsStartedAt,
       process: proc,
@@ -1637,10 +1657,10 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       ? diagnosticSnapshot(c)
       : null
     const heap = normalizeServerLabel(c.server) === 'snug'
-      ? await startPprofTop('heap')
+      ? await startPprofTop(c, 'heap')
       : { ok: false, skipped: true, reason: 'not snug' }
     const alloc = normalizeServerLabel(c.server) === 'snug'
-      ? await startPprofTop('alloc')
+      ? await startPprofTop(c, 'alloc')
       : { ok: false, skipped: true, reason: 'not snug' }
 
     const diagnostics = {
@@ -1655,7 +1675,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       server: {
         kind: normalizeServerLabel(c.server),
         label: c.server,
-        pid: activeServer?.child?.pid ?? null,
+        pid: benchmarkServerPid(c),
         optimizerMode: activeServer?.optimizerMode ?? null,
         logTail: Array.isArray(activeServer?.logs) ? activeServer.logs.join('').slice(-100000) : '',
       },
