@@ -133,6 +133,14 @@ export type BenchmarkDiagnostics = {
       command?: string
       replay?: DiagnosticCommandResult
       cpu: DiagnosticCommandResult
+      readCpu?: DiagnosticCommandResult
+      readProfile?: {
+        command: string
+        ops: number
+        run: DiagnosticCommandResult
+        result?: BenchResult | null
+        cpu: DiagnosticCommandResult
+      }
       load?: BenchResult | null
       get?: BenchResult | null
     }
