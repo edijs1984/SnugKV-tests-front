@@ -782,6 +782,8 @@ function diagnosticSnapshot(config) {
     system: systemMetrics(),
     dbsize: runCliDiagnostic(config.host, config.port, ['DBSIZE']),
     role: runCliDiagnostic(config.host, config.port, ['ROLE']),
+    info_server: runCliDiagnostic(config.host, config.port, ['INFO', 'server']),
+    info_cpu: runCliDiagnostic(config.host, config.port, ['INFO', 'cpu']),
     info_memory: runCliDiagnostic(config.host, config.port, ['INFO', 'memory']),
     info_stats: runCliDiagnostic(config.host, config.port, ['INFO', 'stats']),
     info_persistence: runCliDiagnostic(config.host, config.port, ['INFO', 'persistence']),
@@ -972,6 +974,7 @@ async function startManagedServer(request) {
     port: def.port,
     label: def.label,
     optimizerMode: kind === 'snug' ? optimizerMode : undefined,
+    logs,
   }
 
   child.once('exit', () => {
@@ -1591,6 +1594,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
         label: c.server,
         pid: activeServer?.child?.pid ?? null,
         optimizerMode: activeServer?.optimizerMode ?? null,
+        logTail: Array.isArray(activeServer?.logs) ? activeServer.logs.join('').slice(-100000) : '',
       },
       environment: {
         platform: process.platform,
