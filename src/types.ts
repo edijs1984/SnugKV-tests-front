@@ -49,6 +49,87 @@ export type OptimizationProgress = {
   start_used_memory?: number
 }
 
+export type DiagnosticCommandResult = {
+  ok: boolean
+  exitCode?: number | null
+  stdout?: string
+  stderr?: string
+  skipped?: boolean
+  reason?: string
+  output?: string
+  error?: string
+}
+
+export type ProcessMetrics = {
+  rss_kb: number | null
+  peak_rss_kb: number | null
+  virtual_kb: number | null
+  threads: number | null
+  voluntary_context_switches: number | null
+  nonvoluntary_context_switches: number | null
+  cpu_user_ticks: number | null
+  cpu_system_ticks: number | null
+  read_bytes: number | null
+  write_bytes: number | null
+  read_syscalls: number | null
+  write_syscalls: number | null
+}
+
+export type BenchmarkDiagnostics = {
+  schemaVersion: number
+  runId: string
+  profile: string
+  startedAt: string
+  finishedAt?: string
+  durationMs: number
+  command: string
+  config: BenchmarkConfig
+  server: {
+    kind: 'redis' | 'snug' | null
+    label: string
+    pid: number | null
+    optimizerMode: OptimizerMode | null
+    logTail: string
+  }
+  environment: {
+    platform: string
+    arch: string
+    node: string
+    electron?: string
+    cpus: string[]
+    totalMemoryBytes: number
+  }
+  artifacts: {
+    runDir: string
+    loadJson: string
+    getJson: string
+    diagnosticsJson: string
+  }
+  snapshots: {
+    before: Record<string, unknown>
+    after: Record<string, unknown>
+  }
+  processSamples: Array<{
+    elapsed_ms: number
+    process: ProcessMetrics | null
+    system: {
+      loadavg: number[]
+      free_memory_bytes: number
+      total_memory_bytes: number
+      cpus: number
+    }
+  }>
+  profiling: {
+    cpu: DiagnosticCommandResult
+    heap: DiagnosticCommandResult
+    alloc: DiagnosticCommandResult
+  }
+  benchmark: {
+    load: BenchResult
+    get: BenchResult
+  } | null
+}
+
 export type Job = {
   id: string
   status: 'running' | 'done' | 'failed'
@@ -63,6 +144,7 @@ export type Job = {
     load: BenchResult
     get: BenchResult
   }
+  diagnostics?: BenchmarkDiagnostics
 }
 
 export type ServerStatus = {
