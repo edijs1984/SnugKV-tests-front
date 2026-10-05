@@ -1739,11 +1739,12 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       return
     }
 
+    let benchmarkSucceeded = false
     try {
       const load = JSON.parse(readFileSync(join(out, 'load.json'), 'utf8'))
       const get = JSON.parse(readFileSync(join(out, 'get.json'), 'utf8'))
       job.results = { load, get }
-      job.status = 'done'
+      benchmarkSucceeded = true
       recordCompletedResult(load, get)
     } catch (error) {
       job.status = 'failed'
@@ -1756,12 +1757,12 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       finishedAt: job.finishedAt,
       runDir: out,
       command: job.command,
-      result: { ok: job.status === 'done', exitCode: code },
+      result: { ok: benchmarkSucceeded, exitCode: code },
       load: job.results?.load ?? null,
       get: job.results?.get ?? null,
     }]
 
-    if (job.status === 'done') {
+    if (benchmarkSucceeded) {
       for (let repeatIndex = 2; repeatIndex <= 3; repeatIndex++) {
         job.log += `\n===== MEASURED REPETITION ${repeatIndex}/3 =====\n`
         emit(job)
@@ -1842,6 +1843,9 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     job.log += diagnosticsSummary(diagnostics)
     if (job.log.length > 800_000) job.log = job.log.slice(-800_000)
 
+    if (benchmarkSucceeded) {
+      job.status = 'done'
+    }
     emit(job)
   })
 
