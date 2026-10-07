@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto')
 const { join, resolve } = require('node:path')
 const os = require('node:os')
 const net = require('node:net')
+const http = require('node:http')
 
 const profiles = new Set([
   'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
@@ -847,6 +848,96 @@ function startPprofTop(config, mode, seconds = 5) {
   })
 }
 
+// ---- Automatic profiling of the measured run -------------------------------
+// Captures raw CPU profiles in consecutive windows while the benchmark runs,
+// then mutex/block/heap/allocs/goroutine afterwards, and renders flat/cum
+// tables so nothing has to be collected by hand in a terminal.
+const PPROF_BASE = 'http://127.0.0.1:6060/debug/pprof'
+
+function downloadTo(url, file, timeoutMs) {
+  return new Promise(resolveDl => {
+    const req = http.get(url, res => {
+      if (res.statusCode !== 200) {
+        res.resume()
+        resolveDl(false)
+        return
+      }
+      const chunks = []
+      res.on('data', c => chunks.push(c))
+      res.on('end', () => {
+        try { writeFileSync(file, Buffer.concat(chunks)); resolveDl(true) } catch { resolveDl(false) }
+      })
+      res.on('error', () => resolveDl(false))
+    })
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolveDl(false) })
+    req.on('error', () => resolveDl(false))
+  })
+}
+
+function startRunProfiler(config, out) {
+  const state = { files: [], stopped: false, done: null }
+  if (normalizeServerLabel(config?.server) !== 'snug') {
+    state.done = Promise.resolve()
+    return state
+  }
+  const windowSeconds = 10
+  state.done = (async () => {
+    for (let i = 1; !state.stopped; i++) {
+      const file = join(out, `cpu-${String(i).padStart(2, '0')}.pprof`)
+      const ok = await downloadTo(`${PPROF_BASE}/profile?seconds=${windowSeconds}`, file, (windowSeconds + 15) * 1000)
+      if (ok) state.files.push(file)
+      else await new Promise(r => setTimeout(r, 1000))
+    }
+  })()
+  return state
+}
+
+function pprofText(args) {
+  return new Promise(resolveTop => {
+    const child = spawn(goPath(), ['tool', 'pprof', ...args], {
+      cwd: snugRepo(),
+      env: runtimeEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout?.on('data', c => { output += c.toString() })
+    child.stderr?.on('data', c => { output += c.toString() })
+    child.once('error', e => resolveTop({ ok: false, output: e.message }))
+    child.once('close', code => resolveTop({ ok: code === 0, output: output.trim() }))
+  })
+}
+
+async function finishRunProfiler(state, config, out) {
+  if (normalizeServerLabel(config?.server) !== 'snug') {
+    return { skipped: true, reason: 'not snug' }
+  }
+  state.stopped = true
+  await state.done
+  const result = { runDir: out, cpuFiles: state.files }
+
+  const extra = {}
+  for (const [name, path] of [['mutex', 'mutex'], ['block', 'block'], ['allocs', 'allocs'], ['heap', 'heap']]) {
+    const file = join(out, `${name}.pprof`)
+    if (await downloadTo(`${PPROF_BASE}/${path}`, file, 20000)) extra[name] = file
+  }
+  const goroutineFile = join(out, 'goroutine.txt')
+  await downloadTo(`${PPROF_BASE}/goroutine?debug=1`, goroutineFile, 10000)
+  try {
+    const text = readFileSync(goroutineFile, 'utf8')
+    result.goroutines = text.split('\n', 1)[0]
+  } catch {}
+
+  if (state.files.length) {
+    result.cpuFlat = await pprofText(['-top', '-nodecount=30', ...state.files])
+    result.cpuCum = await pprofText(['-top', '-cum', '-nodecount=30', ...state.files])
+    result.cpuScore = await pprofText(['-top', '-nodecount=20', '-focus=Score|ZScore|zsetScore|Get', ...state.files])
+  }
+  if (extra.mutex) result.mutex = await pprofText(['-top', '-nodecount=15', '-sample_index=delay', extra.mutex])
+  if (extra.block) result.block = await pprofText(['-top', '-nodecount=15', '-sample_index=delay', extra.block])
+  if (extra.allocs) result.allocObjects = await pprofText(['-top', '-nodecount=20', '-sample_index=alloc_objects', extra.allocs])
+  return result
+}
+
 async function runMeasuredRepetition(config, parentOut, index) {
   const out = join(parentOut, `repeat-${index}`)
   mkdirSync(out, { recursive: true })
@@ -1128,6 +1219,19 @@ function diagnosticsSummary(diagnostics) {
   if (after?.process?.peak_rss_kb != null) lines.push(`process_peak_rss: ${after.process.peak_rss_kb} kB`)
   if (after?.snug_stats?.stdout) {
     lines.push('', '--- SNUG.STATS (after measured run) ---', after.snug_stats.stdout)
+  }
+  const rp = diagnostics.profiling.run
+  if (rp && !rp.skipped) {
+    lines.push('', `--- RUN PROFILES (raw files in ${rp.runDir}: cpu-*.pprof mutex.pprof block.pprof allocs.pprof heap.pprof) ---`)
+    if (rp.goroutines) lines.push(rp.goroutines)
+    const sections = [
+      ['CPU FLAT (during run)', rp.cpuFlat], ['CPU CUM (during run)', rp.cpuCum],
+      ['CPU READ-PATH FOCUS', rp.cpuScore], ['MUTEX DELAY', rp.mutex],
+      ['BLOCK DELAY', rp.block], ['ALLOC OBJECTS', rp.allocObjects],
+    ]
+    for (const [title, part] of sections) {
+      if (part?.output) lines.push('', `--- ${title} ---`, part.output)
+    }
   }
   if (diagnostics.profiling.cpu?.output) {
     lines.push('', '--- LOAD CPU PPROF TOP ---', diagnostics.profiling.cpu.output)
@@ -1783,6 +1887,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     },
   })
   activeChild = child
+  const runProfiler = startRunProfiler(c, out)
 
   let progressBuffer = ''
   const append = chunk => {
@@ -1829,6 +1934,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   child.stderr.on('data', appendProgress)
 
   child.on('error', error => {
+    runProfiler.stopped = true
     job.status = 'failed'
     job.error = error.message
     job.finishedAt = new Date().toISOString()
@@ -1843,6 +1949,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     activeChild = null
 
     if (code !== 0) {
+      runProfiler.stopped = true
       job.status = 'failed'
       job.error = `Benchmark exited with code ${code}`
       emit(job)
@@ -1889,6 +1996,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
       }
     }
 
+    const runProfile = await finishRunProfiler(runProfiler, c, out)
     const repetitionSummary = summarizeRepetitions(measuredRepetitions)
     const diagnosticsAfterMeasured = diagnosticSnapshot(c)
     const profilingReplay = await runSnugProfileReplay(c, out)
@@ -1945,6 +2053,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
         heap,
         alloc,
         replay: profilingReplay,
+        run: runProfile,
       },
       benchmark: job.results ?? null,
     }
