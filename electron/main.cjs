@@ -333,6 +333,9 @@ function sanitize(body = {}) {
     settleMs: Math.max(0, Math.min(Number(body.settleMs) || 0, 600_000)),
     seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
     optimizerMode: body.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated',
+    // Measured passes per benchmark: 1 for matrix runs (Run all / Run selected),
+    // 3 (default) for the single-benchmark diagnostics view.
+    repetitions: positiveInt(body.repetitions, 3, 3),
   }
 }
 
@@ -1870,8 +1873,8 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     }]
 
     if (benchmarkSucceeded) {
-      for (let repeatIndex = 2; repeatIndex <= 3; repeatIndex++) {
-        job.log += `\n===== MEASURED REPETITION ${repeatIndex}/3 =====\n`
+      for (let repeatIndex = 2; repeatIndex <= c.repetitions; repeatIndex++) {
+        job.log += `\n===== MEASURED REPETITION ${repeatIndex}/${c.repetitions} =====\n`
         emit(job)
         const repeated = await runMeasuredRepetition(c, out, repeatIndex)
         measuredRepetitions.push(repeated)

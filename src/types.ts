@@ -12,6 +12,8 @@ export type BenchmarkConfig = {
   settleMs: number
   seed: number
   optimizerMode?: OptimizerMode
+  /** Measured passes (1-3). Matrix runs use 1; omitted means 3. */
+  repetitions?: number
 }
 
 export type BenchResult = {
