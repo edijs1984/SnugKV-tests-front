@@ -8,6 +8,14 @@ const series: { key: SeriesKey; label: string; color: string; dash?: string }[] 
   { key: 'snug-opt', label: 'SnugKV', color: '#199e70' }
 ]
 
+const sizes: Record<string, string> = { small: '10', medium: '100', large: '1k' }
+const types: Record<string, string> = { hash: 'Hash', list: 'List', set: 'Set', zset: 'ZSet' }
+function shortLabel(key: string, fallback: string) {
+  const m = key.match(/^(hash|list|set|zset)-(small|medium|large)$/)
+  if (m) return `${types[m[1]]} ${sizes[m[2]]}`
+  return key || fallback
+}
+
 export type RadarMetric = 'memory' | 'set' | 'get'
 const metrics: Record<RadarMetric, { title: string; sub: string; unit: string; pick: (b: BestServerResult) => number }> = {
   memory: { title: 'RAM per item vs Redis', sub: 'Lowest bytes/item, Redis = 100%. Closer to the centre is better.', unit: 'B/item', pick: b => b.lowestBytesPerKey },
@@ -18,9 +26,11 @@ const metrics: Record<RadarMetric, { title: string; sub: string; unit: string; p
 type Axis = { key: string; label: string; redis: number; values: Partial<Record<SeriesKey, number>> }
 
 const fmt = (v: number) => (v >= 1000 ? Math.round(v).toLocaleString() : v.toFixed(1))
-const SIZE = 520
-const C = SIZE / 2
-const R = 150
+const W = 800
+const R = 215
+const CX = W / 2
+const CY = R + 80
+const H = 2 * R + 160
 
 export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles: string[][]; allBest: AllProfileBestResults; metric?: RadarMetric }) {
   const m = metrics[metric]
@@ -37,7 +47,7 @@ export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles
       const v = b[s.key] ? m.pick(b[s.key]!) : 0
       if (v && v > 0) values[s.key] = v
     }
-    return [{ key, label, redis, values }]
+    return [{ key, label: shortLabel(key, label), redis, values }]
   }), [profiles, allBest, m])
 
   const ratios = axes.flatMap(a => series.map(s => (a.values[s.key] ?? 0) / a.redis))
@@ -48,7 +58,7 @@ export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles
   const angle = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n
   const pt = (i: number, ratio: number) => {
     const r = (ratio / top) * R
-    return [C + r * Math.cos(angle(i)), C + r * Math.sin(angle(i))] as const
+    return [CX + r * Math.cos(angle(i)), CY + r * Math.sin(angle(i))] as const
   }
 
   return (
@@ -94,14 +104,14 @@ export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles
         </table>
       ) : (
         <div className="radar-wrap" onMouseLeave={() => setTip(null)}>
-          <svg viewBox={`0 ${C - R - 70} ${SIZE} ${2 * R + 140}`} role="img" aria-label="Radar chart of bytes per item relative to Redis">
+          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Radar chart of bytes per item relative to Redis">
             {rings.map((t, k) => (
               <g key={k}>
                 <polygon
                   points={axes.map((_, i) => pt(i, t).join(',')).join(' ')}
                   className={Math.abs(t - 1) < 1e-9 ? 'radar-ring base' : 'radar-ring'}
                 />
-                <text x={C + 4} y={C - (t / top) * R - 3} className="radar-tick">{Math.round(t * 100)}%</text>
+                <text x={CX + 4} y={CY - (t / top) * R - 3} className="radar-tick">{Math.round(t * 100)}%</text>
               </g>
             ))}
             {axes.map((a, i) => {
@@ -110,7 +120,7 @@ export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles
               const cos = Math.cos(angle(i))
               return (
                 <g key={a.key}>
-                  <line x1={C} y1={C} x2={x} y2={y} className="radar-spoke" />
+                  <line x1={CX} y1={CY} x2={x} y2={y} className="radar-spoke" />
                   <text x={lx} y={ly} className="radar-label" textAnchor={Math.abs(cos) < 0.2 ? 'middle' : cos > 0 ? 'start' : 'end'} dominantBaseline="middle">
                     {a.label}
                   </text>
@@ -148,7 +158,7 @@ export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles
             })}
           </svg>
           {tip && (
-            <div className="radar-tip" style={{ left: `${(tip.x / SIZE) * 100}%`, top: `${((tip.y - (C - R - 70)) / (2 * R + 140)) * 100}%` }}>
+            <div className="radar-tip" style={{ left: `${(tip.x / W) * 100}%`, top: `${(tip.y / H) * 100}%` }}>
               <b>{tip.axis.label}</b>
               <span>{tip.s.label}: {fmt(tip.axis.values[tip.s.key]!)} {m.unit}</span>
               <span>{(((tip.axis.values[tip.s.key] ?? 0) / tip.axis.redis) * 100).toFixed(0)}% of Redis ({fmt(tip.axis.redis)})</span>

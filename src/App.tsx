@@ -110,6 +110,7 @@ function App() {
     'snug-raw': null,
     'snug-opt': null,
   })
+  const [view, setView] = useState<'run' | 'charts'>('run')
   const [allBest, setAllBest] = useState<AllProfileBestResults>({})
 
   useEffect(() => {
@@ -168,7 +169,7 @@ function App() {
     }
   }, [config.profile])
 
-  async function startServer(kind: 'redis' | 'snug-raw' | 'snug-opt') {
+  async function startServer(kind: 'redis' | 'snug-opt') {
     setServerBusy(true)
     setAppError(null)
     try {
@@ -230,8 +231,7 @@ function App() {
     const profileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
     const rows = [
       ['redis', 'Redis'],
-      ['snug-raw', 'SnugKV raw'],
-      ['snug-opt', 'SnugKV opt'],
+      ['snug-opt', 'SnugKV'],
     ] as const
 
     const lines = [
@@ -323,8 +323,7 @@ function App() {
             <div className="server-switches">
               {([
                 ['redis', 'Redis'],
-                ['snug-raw', 'SnugKV raw'],
-                ['snug-opt', 'SnugKV opt'],
+                ['snug-opt', 'SnugKV'],
               ] as const).map(([kind, label]) => (
                 <button
                   key={kind}
@@ -337,6 +336,11 @@ function App() {
               ))}
             </div>
 
+            <div className="view-tabs">
+              <button className={view === 'run' ? 'active' : ''} onClick={() => setView('run')}>Benchmark</button>
+              <button className={view === 'charts' ? 'active' : ''} onClick={() => setView('charts')}>Charts</button>
+            </div>
+
             <div className="server-state">
               <span>{serverStatus.running ? `${config.host}:${serverStatus.port}` : 'No local server'}</span>
               {serverStatus.running && (
@@ -347,8 +351,8 @@ function App() {
                   title="Stop server"
                 >
                   {activeMode === 'snug-opt'
-                    ? `OPT · ${(serverStatus.optimizerMode ?? 'dedicated').toUpperCase()}`
-                    : activeMode === 'snug-raw' ? 'RAW' : 'REDIS'}
+                    ? `SNUGKV · ${(serverStatus.optimizerMode ?? 'dedicated').toUpperCase()}`
+                    : 'REDIS'}
                 </button>
               )}
             </div>
@@ -362,6 +366,13 @@ function App() {
             </div>
           )}
 
+          {view === 'charts' ? (
+            <div className="charts-view">
+              {(['memory', 'set', 'get'] as const).map(m => (
+                <MemoryRadar key={m} metric={m} profiles={profiles as unknown as string[][]} allBest={allBest} />
+              ))}
+            </div>
+          ) : (
           <div className="bench-layout">
             <section className="config-column">
               <label className="compact-field">
@@ -408,7 +419,7 @@ function App() {
                   {activeMode === 'snug-opt' &&
                     serverStatus.optimizerMode &&
                     serverStatus.optimizerMode !== (config.optimizerMode ?? 'dedicated')
-                    ? ' Restart SnugKV opt to apply.'
+                    ? ' Restart SnugKV to apply.'
                     : ''}
                 </small>
               </div>
@@ -539,14 +550,9 @@ function App() {
                   </small>
                 </article>
               </div>
-
-              <div className="radar-grid">
-                {(['memory', 'set', 'get'] as const).map(m => (
-                  <MemoryRadar key={m} metric={m} profiles={profiles as unknown as string[][]} allBest={allBest} />
-                ))}
-              </div>
             </section>
           </div>
+          )}
         </div>
 
         <aside className="best-sidebar">
@@ -573,7 +579,7 @@ function App() {
                 'snug-raw': null,
                 'snug-opt': null,
               }
-              const hasAny = Boolean(profileBest.redis || profileBest['snug-raw'] || profileBest['snug-opt'])
+              const hasAny = Boolean(profileBest.redis || profileBest['snug-opt'])
               return (
                 <section
                   className={profileKey === config.profile ? 'best-profile-group selected' : 'best-profile-group'}
@@ -584,30 +590,28 @@ function App() {
                     {!hasAny && <span>No runs yet</span>}
                   </div>
                   {hasAny && (
-                    <div className="best-profile-servers">
-                      {([
-                        ['redis', 'Redis'],
-                        ['snug-raw', 'Snug raw'],
-                        ['snug-opt', 'Snug opt'],
-                      ] as const).map(([key, label]) => {
-                        const result = profileBest[key]
-                        if (!result) return null
-                        return (
-                          <article className="best-result-card compact" key={key}>
-                            <div className="best-result-title">
-                              <span className={`result-dot ${key}`} />
-                              <strong>{label}</strong>
-                              <small>{result.runs} run{result.runs === 1 ? '' : 's'}</small>
-                            </div>
-                            <dl>
-                              <div><dt>SET/WRITE</dt><dd>{nf.format(Math.round(result.bestSet))}/s</dd></div>
-                              <div><dt>GET/READ</dt><dd>{nf.format(Math.round(result.bestGet))}/s</dd></div>
-                              <div><dt>Lowest B/item</dt><dd>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(2) : '—'}</dd></div>
-                            </dl>
-                          </article>
-                        )
-                      })}
-                    </div>
+                    <table className="best-table">
+                      <thead>
+                        <tr><th></th><th>SET/s</th><th>GET/s</th><th>B/item</th></tr>
+                      </thead>
+                      <tbody>
+                        {([['redis', 'Redis'], ['snug-opt', 'SnugKV']] as const).map(([key, label]) => {
+                          const result = profileBest[key]
+                          if (!result) return null
+                          const other = profileBest[key === 'redis' ? 'snug-opt' : 'redis']
+                          const better = (mine: number, theirs: number | undefined, lower: boolean) =>
+                            theirs !== undefined && (lower ? mine < theirs : mine > theirs) ? 'win' : undefined
+                          return (
+                            <tr key={key}>
+                              <td><span className={`result-dot ${key}`} />{label}</td>
+                              <td className={better(result.bestSet, other?.bestSet, false)}>{nf.format(Math.round(result.bestSet))}</td>
+                              <td className={better(result.bestGet, other?.bestGet, false)}>{nf.format(Math.round(result.bestGet))}</td>
+                              <td className={better(result.lowestBytesPerKey, other?.lowestBytesPerKey, true)}>{Number.isFinite(result.lowestBytesPerKey) ? result.lowestBytesPerKey.toFixed(1) : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   )}
                 </section>
               )
