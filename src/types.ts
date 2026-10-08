@@ -297,3 +297,38 @@ export type DbCommandAction =
   | { action: 'rpush'; key: string; value: string }
   | { action: 'sadd'; key: string; value: string }
   | { action: 'zadd'; key: string; member: string; score: number }
+
+export type DbOverview = {
+  host: string
+  port: number
+  keys: number
+  usedMemory: number | null
+  peakMemory: number | null
+  maxMemory: number | null
+  commands: number | null
+  uptimeSeconds: number | null
+  clients: number | null
+  version: string | null
+  at: number
+}
+
+export type DbScanKey = {
+  key: string
+  type: string
+  ttl: number
+  memoryBytes?: number
+}
+
+export type DbScanResult = {
+  keys: DbScanKey[]
+  cursor: string
+  command: string
+}
+
+export type DbPipelineResult = {
+  ok: boolean
+  sent: number
+  errors: number
+  firstError: string | null
+  elapsedMs: number
+}

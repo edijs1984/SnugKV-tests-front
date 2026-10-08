@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult } from './types'
 
 export {}
 
@@ -31,6 +31,10 @@ declare global {
       dbMutate(request: DbMutation): Promise<{ ok: boolean; command: string }>
       dbBulk(request: DbBulkAction): Promise<{ ok: boolean; command: string; affected: number }>
       dbCommand(request: DbCommandAction): Promise<{ ok: boolean; command: string; result: string }>
+      dbOverview(): Promise<DbOverview>
+      dbScan(options: { cursor: string; pattern: string; count: number }): Promise<DbScanResult>
+      dbPipeline(request: { commands: string[][] }): Promise<DbPipelineResult>
+      dbFlush(): Promise<{ ok: boolean; command: string }>
     }
   }
 }

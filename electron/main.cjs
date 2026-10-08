@@ -1690,6 +1690,112 @@ ipcMain.handle('db:command', (_event, request = {}) => {
   return { ok: true, command: dbCommandDisplay(args), result }
 })
 
+function dbQuoteArg(value) {
+  const text = String(value)
+  let out = '"'
+  for (const ch of Buffer.from(text, 'utf8')) {
+    if (ch === 0x22) out += '\\"'
+    else if (ch === 0x5c) out += '\\\\'
+    else if (ch >= 0x20 && ch < 0x7f) out += String.fromCharCode(ch)
+    else out += '\\x' + ch.toString(16).padStart(2, '0')
+  }
+  return out + '"'
+}
+
+// Run many commands through ONE redis-cli process (stdin mode). Returns raw reply lines.
+function runDbPipe(commands, options = {}) {
+  const db = requireActiveDbServer()
+  const input = commands.map(args => args.map(dbQuoteArg).join(' ')).join('\n') + '\n'
+  const result = spawnSync(redisCliPath(), ['--raw', '-h', db.host, '-p', String(db.port)], {
+    env: runtimeEnv(),
+    encoding: 'utf8',
+    input,
+    timeout: options.timeout ?? 60000,
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(String(result.stderr || result.stdout || `redis-cli exited with code ${result.status}`).trim())
+  return String(result.stdout || '').replace(/\r/g, '').split('\n')
+}
+
+function dbInfoMap(text) {
+  const map = {}
+  for (const line of dbLines(text)) {
+    const i = line.indexOf(':')
+    if (i > 0 && !line.startsWith('#')) map[line.slice(0, i)] = line.slice(i + 1)
+  }
+  return map
+}
+
+const DB_PIPELINE_COMMANDS = new Set(['SET', 'INCR', 'INCRBY', 'HSET', 'RPUSH', 'LPUSH', 'SADD', 'ZADD', 'JSON.SET', 'DEL', 'EXPIRE'])
+
+ipcMain.handle('db:overview', () => {
+  const db = requireActiveDbServer()
+  const out = { host: db.host, port: db.port, keys: 0, usedMemory: null, peakMemory: null, maxMemory: null, commands: null, uptimeSeconds: null, clients: null, version: null, at: Date.now() }
+  out.keys = Number(runDbCli(['DBSIZE'], { timeout: 4000 })) || 0
+  try {
+    const info = dbInfoMap(runDbCli(['INFO'], { timeout: 4000 }))
+    const num = key => (info[key] !== undefined && Number.isFinite(Number(info[key])) ? Number(info[key]) : null)
+    out.usedMemory = num('used_memory')
+    out.peakMemory = num('used_memory_peak')
+    out.maxMemory = num('maxmemory')
+    out.commands = num('total_commands_processed')
+    out.uptimeSeconds = num('uptime_in_seconds')
+    out.clients = num('connected_clients')
+    out.version = info.redis_version || info.snugkv_version || null
+  } catch {
+    // INFO is optional; DBSIZE alone is still useful.
+  }
+  return out
+})
+
+ipcMain.handle('db:scan', (_event, request = {}) => {
+  requireActiveDbServer()
+  const pattern = cleanDbText(request.pattern || '*', 256) || '*'
+  const count = positiveInt(request.count, 100, 500)
+  const cursorIn = /^\d+$/.test(String(request.cursor ?? '0')) ? String(request.cursor ?? '0') : '0'
+  const lines = dbLines(runDbCli(['SCAN', cursorIn, 'MATCH', pattern, 'COUNT', String(count)], { timeout: 8000 })).filter(l => l !== '')
+  const cursor = lines.shift() || '0'
+  const names = lines.slice(0, count)
+  const keys = []
+  if (names.length) {
+    const reply = runDbPipe(names.flatMap(key => [['TYPE', key], ['TTL', key], ['MEMORY', 'USAGE', key]]), { timeout: 15000 })
+    names.forEach((key, i) => {
+      const memory = Number(reply[i * 3 + 2])
+      const ttl = Number(reply[i * 3 + 1])
+      keys.push({
+        key,
+        type: reply[i * 3] || 'unknown',
+        ttl: Number.isFinite(ttl) ? ttl : -1,
+        memoryBytes: Number.isFinite(memory) && reply[i * 3 + 2] !== '' ? memory : undefined,
+      })
+    })
+  }
+  return { keys, cursor, command: dbCommandDisplay(['SCAN', cursorIn, 'MATCH', pattern, 'COUNT', String(count)]) }
+})
+
+ipcMain.handle('db:pipeline', (_event, request = {}) => {
+  requireActiveDbServer()
+  const commands = Array.isArray(request.commands) ? request.commands : []
+  if (!commands.length) throw new Error('No commands to run')
+  if (commands.length > 5000) throw new Error('Too many commands in one batch (max 5000)')
+  const clean = commands.map(args => {
+    if (!Array.isArray(args) || !args.length) throw new Error('Invalid command')
+    const list = args.map(arg => cleanDbText(arg, 8 * 1024 * 1024))
+    if (!DB_PIPELINE_COMMANDS.has(list[0].toUpperCase())) throw new Error(`Command not allowed: ${list[0]}`)
+    return list
+  })
+  const started = Date.now()
+  const reply = runDbPipe(clean)
+  const errors = reply.filter(line => /^(ERR|WRONGTYPE|NOPERM|OOM|MISCONF|EXECABORT)\b/.test(line))
+  return { ok: errors.length === 0, sent: clean.length, errors: errors.length, firstError: errors[0] || null, elapsedMs: Date.now() - started }
+})
+
+ipcMain.handle('db:flush', () => {
+  runDbCli(['FLUSHDB'])
+  return { ok: true, command: dbCommandDisplay(['FLUSHDB']) }
+})
+
 ipcMain.handle('history:get', (_event, profile) => {
   const normalized = canonicalProfile(profile)
   if (!profiles.has(normalized)) return emptyBest()

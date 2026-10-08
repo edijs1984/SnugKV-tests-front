@@ -44,4 +44,8 @@ contextBridge.exposeInMainWorld('snugBench', {
   dbMutate: request => ipcRenderer.invoke('db:mutate', request),
   dbBulk: request => ipcRenderer.invoke('db:bulk', request),
   dbCommand: request => ipcRenderer.invoke('db:command', request),
+  dbOverview: () => ipcRenderer.invoke('db:overview'),
+  dbScan: options => ipcRenderer.invoke('db:scan', options),
+  dbPipeline: request => ipcRenderer.invoke('db:pipeline', request),
+  dbFlush: () => ipcRenderer.invoke('db:flush'),
 })
