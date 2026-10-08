@@ -558,3 +558,27 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
 .best-result-card.compact dd {
   font-size: 10px;
 }
+
+/* Memory radar */
+.radar-card { border: 1px solid #2d343b; background: #101418; border-radius: 9px; padding: 16px 18px; margin-top: 18px; }
+.radar-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.radar-head strong { display: block; color: #f1f4f6; font-size: 15px; }
+.radar-head span { color: #8c96a0; font-size: 12px; }
+.radar-head button { background: #181d22; color: #c5ccd3; border: 1px solid #2d343b; border-radius: 6px; padding: 5px 12px; font-size: 12px; }
+.radar-legend { display: flex; gap: 18px; list-style: none; margin: 12px 0 0; padding: 0; color: #c5ccd3; font-size: 12px; }
+.radar-legend li { display: inline-flex; align-items: center; gap: 7px; }
+.radar-wrap { position: relative; max-width: 620px; margin: 0 auto; }
+.radar-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
+.radar-ring { fill: none; stroke: #2d343b; stroke-width: 1; }
+.radar-ring.base { stroke: #4a535c; }
+.radar-spoke { stroke: #2d343b; stroke-width: 1; }
+.radar-label { fill: #c5ccd3; font-size: 11px; }
+.radar-tick { fill: #8c96a0; font-size: 10px; paint-order: stroke; stroke: #101418; stroke-width: 3px; }
+.radar-wrap circle[tabindex] { outline: none; cursor: pointer; }
+.radar-tip { position: absolute; transform: translate(-50%, calc(-100% - 12px)); pointer-events: none; background: #1a2026; border: 1px solid #39424a; border-radius: 6px; padding: 7px 10px; display: grid; gap: 2px; font-size: 12px; color: #eef2f6; white-space: nowrap; z-index: 2; }
+.radar-tip span { color: #a5aeb7; }
+.radar-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+.radar-table th, .radar-table td { padding: 6px 8px; border-bottom: 1px solid #252a30; text-align: right; color: #c5ccd3; }
+.radar-table th:first-child, .radar-table td:first-child { text-align: left; }
+.radar-table th { color: #8c96a0; font-weight: 500; }
+.radar-empty { color: #8c96a0; font-size: 12px; }

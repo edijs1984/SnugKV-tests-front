@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MemoryRadar } from './MemoryRadar'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, AllProfileBestResults } from './types'
 
 const profiles = [
@@ -538,6 +539,8 @@ function App() {
                   </small>
                 </article>
               </div>
+
+              <MemoryRadar profiles={profiles as unknown as string[][]} allBest={allBest} />
             </section>
           </div>
         </div>
