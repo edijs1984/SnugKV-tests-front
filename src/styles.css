@@ -582,3 +582,6 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
 .radar-table th:first-child, .radar-table td:first-child { text-align: left; }
 .radar-table th { color: #8c96a0; font-weight: 500; }
 .radar-empty { color: #8c96a0; font-size: 12px; }
+
+.radar-grid { display: grid; gap: 14px; margin-top: 18px; }
+.radar-grid .radar-card { margin-top: 0; }

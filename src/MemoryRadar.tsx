@@ -1,36 +1,44 @@
 import { useMemo, useState } from 'react'
-import type { AllProfileBestResults } from './types'
+import type { AllProfileBestResults, BestServerResult } from './types'
 
-type SeriesKey = 'redis' | 'snug-raw' | 'snug-opt'
+type SeriesKey = 'redis' | 'snug-opt'
 
 const series: { key: SeriesKey; label: string; color: string; dash?: string }[] = [
   { key: 'redis', label: 'Redis', color: '#3987e5', dash: '5 4' },
-  { key: 'snug-raw', label: 'SnugKV raw', color: '#d95926' },
-  { key: 'snug-opt', label: 'SnugKV opt', color: '#199e70' }
+  { key: 'snug-opt', label: 'SnugKV', color: '#199e70' }
 ]
+
+export type RadarMetric = 'memory' | 'set' | 'get'
+const metrics: Record<RadarMetric, { title: string; sub: string; unit: string; pick: (b: BestServerResult) => number }> = {
+  memory: { title: 'RAM per item vs Redis', sub: 'Lowest bytes/item, Redis = 100%. Closer to the centre is better.', unit: 'B/item', pick: b => b.lowestBytesPerKey },
+  set: { title: 'SET speed vs Redis', sub: 'Best SET ops/s, Redis = 100%. Further out is faster.', unit: 'ops/s', pick: b => b.bestSet },
+  get: { title: 'GET speed vs Redis', sub: 'Best GET ops/s, Redis = 100%. Further out is faster.', unit: 'ops/s', pick: b => b.bestGet }
+}
 
 type Axis = { key: string; label: string; redis: number; values: Partial<Record<SeriesKey, number>> }
 
+const fmt = (v: number) => (v >= 1000 ? Math.round(v).toLocaleString() : v.toFixed(1))
 const SIZE = 520
 const C = SIZE / 2
 const R = 150
 
-export function MemoryRadar({ profiles, allBest }: { profiles: string[][]; allBest: AllProfileBestResults }) {
+export function MemoryRadar({ profiles, allBest, metric = 'memory' }: { profiles: string[][]; allBest: AllProfileBestResults; metric?: RadarMetric }) {
+  const m = metrics[metric]
   const [table, setTable] = useState(false)
   const [tip, setTip] = useState<{ x: number; y: number; axis: Axis; s: typeof series[number] } | null>(null)
 
   // Axes: every profile that has a Redis baseline (everything is shown relative to it).
   const axes = useMemo<Axis[]>(() => profiles.flatMap(([key, label]) => {
     const b = allBest[key]
-    const redis = b?.redis?.lowestBytesPerKey
+    const redis = b?.redis ? m.pick(b.redis) : 0
     if (!b || !redis || redis <= 0) return []
     const values: Partial<Record<SeriesKey, number>> = {}
     for (const s of series) {
-      const v = b[s.key]?.lowestBytesPerKey
+      const v = b[s.key] ? m.pick(b[s.key]!) : 0
       if (v && v > 0) values[s.key] = v
     }
     return [{ key, label, redis, values }]
-  }), [profiles, allBest])
+  }), [profiles, allBest, m])
 
   const ratios = axes.flatMap(a => series.map(s => (a.values[s.key] ?? 0) / a.redis))
   const max = Math.max(1.2, ...ratios)
@@ -44,11 +52,11 @@ export function MemoryRadar({ profiles, allBest }: { profiles: string[][]; allBe
   }
 
   return (
-    <section className="radar-card" aria-label="RAM per item, relative to Redis">
+    <section className="radar-card" aria-label={m.title}>
       <div className="radar-head">
         <div>
-          <strong>RAM per item vs Redis</strong>
-          <span>Lowest bytes/item per profile, Redis = 100%. Closer to the centre is better.</span>
+          <strong>{m.title}</strong>
+          <span>{m.sub}</span>
         </div>
         <button onClick={() => setTable(t => !t)}>{table ? 'Chart' : 'Table'}</button>
       </div>
@@ -65,11 +73,11 @@ export function MemoryRadar({ profiles, allBest }: { profiles: string[][]; allBe
       </ul>
 
       {n < 3 ? (
-        <p className="radar-empty">Run at least 3 profiles against Redis to draw the chart.</p>
+        <p className="radar-empty">Run at least 3 profiles on Redis and SnugKV to draw the chart.</p>
       ) : table ? (
         <table className="radar-table">
           <thead>
-            <tr><th>Profile</th>{series.map(s => <th key={s.key}>{s.label} B/item</th>)}<th>Opt vs Redis</th></tr>
+            <tr><th>Profile</th>{series.map(s => <th key={s.key}>{s.label} {m.unit}</th>)}<th>vs Redis</th></tr>
           </thead>
           <tbody>
             {axes.map(a => {
@@ -77,7 +85,7 @@ export function MemoryRadar({ profiles, allBest }: { profiles: string[][]; allBe
               return (
                 <tr key={a.key}>
                   <td>{a.label}</td>
-                  {series.map(s => <td key={s.key}>{a.values[s.key]?.toFixed(1) ?? '—'}</td>)}
+                  {series.map(s => <td key={s.key}>{a.values[s.key] ? fmt(a.values[s.key]!) : '—'}</td>)}
                   <td>{o ? `${((o / a.redis) * 100).toFixed(0)}%` : '—'}</td>
                 </tr>
               )
@@ -142,8 +150,8 @@ export function MemoryRadar({ profiles, allBest }: { profiles: string[][]; allBe
           {tip && (
             <div className="radar-tip" style={{ left: `${(tip.x / SIZE) * 100}%`, top: `${((tip.y - (C - R - 70)) / (2 * R + 140)) * 100}%` }}>
               <b>{tip.axis.label}</b>
-              <span>{tip.s.label}: {tip.axis.values[tip.s.key]!.toFixed(1)} B/item</span>
-              <span>{(((tip.axis.values[tip.s.key] ?? 0) / tip.axis.redis) * 100).toFixed(0)}% of Redis ({tip.axis.redis.toFixed(1)})</span>
+              <span>{tip.s.label}: {fmt(tip.axis.values[tip.s.key]!)} {m.unit}</span>
+              <span>{(((tip.axis.values[tip.s.key] ?? 0) / tip.axis.redis) * 100).toFixed(0)}% of Redis ({fmt(tip.axis.redis)})</span>
             </div>
           )}
         </div>

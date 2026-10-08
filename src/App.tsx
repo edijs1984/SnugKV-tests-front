@@ -540,7 +540,11 @@ function App() {
                 </article>
               </div>
 
-              <MemoryRadar profiles={profiles as unknown as string[][]} allBest={allBest} />
+              <div className="radar-grid">
+                {(['memory', 'set', 'get'] as const).map(m => (
+                  <MemoryRadar key={m} metric={m} profiles={profiles as unknown as string[][]} allBest={allBest} />
+                ))}
+              </div>
             </section>
           </div>
         </div>
