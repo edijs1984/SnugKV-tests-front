@@ -1841,7 +1841,7 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
 }
 .matrix-radar-grid-wrap {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 14px;
 }
 .matrix-chart-card {

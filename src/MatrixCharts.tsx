@@ -38,6 +38,8 @@ type RadarDatum = {
   snugSource: string
 }
 
+const MEMORY_NOTE = 'Each axis is scaled to the larger RAM use for that data type, so the bigger server touches the outer ring. Closer to the centre is better. HASH/LIST/SET/ZSET use the lowest result across sizes.'
+
 const nf = new Intl.NumberFormat('en-US')
 
 function logicalFamily(profile: string) {
@@ -134,6 +136,27 @@ function radarData(grouped: Map<string, FamilyBest>, metric: 'set' | 'get') {
   return result
 }
 
+function memoryRadarData(grouped: Map<string, FamilyBest>) {
+  const result: RadarDatum[] = []
+  for (const [id, family] of grouped) {
+    const redisRaw = Number.isFinite(family.redis.memory) ? family.redis.memory : 0
+    const snugRaw = Number.isFinite(family.snug.memory) ? family.snug.memory : 0
+    if (redisRaw <= 0 && snugRaw <= 0) continue
+    const ceiling = Math.max(redisRaw, snugRaw, 1)
+    result.push({
+      id,
+      label: familyLabel(id),
+      redis: redisRaw / ceiling,
+      snug: snugRaw / ceiling,
+      redisRaw,
+      snugRaw,
+      redisSource: family.redis.memorySource,
+      snugSource: family.snug.memorySource,
+    })
+  }
+  return result
+}
+
 function point(cx: number, cy: number, radius: number, angle: number) {
   return {
     x: cx + Math.cos(angle) * radius,
@@ -149,7 +172,7 @@ function polygonPoints(data: RadarDatum[], key: 'redis' | 'snug', cx: number, cy
   }).join(' ')
 }
 
-function RadarChart({ title, subtitle, data, onExpand }: { title: string; subtitle: string; data: RadarDatum[]; onExpand?: () => void }) {
+function RadarChart({ title, subtitle, data, onExpand, unit = '/s', note }: { title: string; subtitle: string; data: RadarDatum[]; onExpand?: () => void; unit?: string; note?: string }) {
   if (data.length < 3) {
     return (
       <div className={`matrix-chart-card matrix-chart-empty${onExpand ? ' expandable' : ''}`} onClick={onExpand}>
@@ -210,63 +233,13 @@ function RadarChart({ title, subtitle, data, onExpand }: { title: string; subtit
             const source = server === 'redis' ? row.redisSource : row.snugSource
             return (
               <circle key={`${row.id}:${server}`} className={`matrix-radar-dot ${server}`} cx={p.x} cy={p.y} r="3.5">
-                <title>{`${row.label} · ${server === 'redis' ? 'Redis' : 'SnugKV'}: ${nf.format(Math.round(raw))}/s · source ${source}`}</title>
+                <title>{`${row.label} · ${server === 'redis' ? 'Redis' : 'SnugKV'}: ${raw >= 1000 ? nf.format(Math.round(raw)) : raw.toFixed(1)}${unit} · source ${source}`}</title>
               </circle>
             )
           })
         })}
       </svg>
-      <div className="matrix-chart-note">Each axis is normalized to the faster server for that data type. Hover points for raw ops/s and source profile.</div>
-    </div>
-  )
-}
-
-function MemoryChart({ grouped, onExpand }: { grouped: Map<string, FamilyBest>; onExpand?: () => void }) {
-  const rows = Array.from(grouped.entries()).map(([id, value]) => ({
-    id,
-    label: familyLabel(id),
-    redis: Number.isFinite(value.redis.memory) ? value.redis.memory : 0,
-    snug: Number.isFinite(value.snug.memory) ? value.snug.memory : 0,
-    redisSource: value.redis.memorySource,
-    snugSource: value.snug.memorySource,
-  })).filter(row => row.redis > 0 || row.snug > 0)
-
-  const max = Math.max(...rows.flatMap(row => [row.redis, row.snug]), 1)
-
-  return (
-    <div className={`matrix-chart-card matrix-memory-card${onExpand ? ' expandable' : ''}`} onClick={onExpand}>
-      <div className="matrix-chart-head">
-        <div><strong>RAM used by data type</strong><span>Lowest recorded bytes per logical unit</span></div>
-        <div className="matrix-chart-legend">
-          <span><i className="redis" />Redis</span>
-          <span><i className="snug" />SnugKV</span>
-        </div>
-      </div>
-      {rows.length === 0 ? (
-        <p className="matrix-memory-empty">No recorded matrix memory results yet.</p>
-      ) : (
-        <div className="matrix-memory-chart">
-          {rows.map(row => (
-            <div className="matrix-memory-row" key={row.id}>
-              <strong>{row.label}</strong>
-              <div className="matrix-memory-bars">
-                {(['redis', 'snug'] as const).map(server => {
-                  const value = row[server]
-                  const source = server === 'redis' ? row.redisSource : row.snugSource
-                  return (
-                    <div className="matrix-memory-line" key={server} title={`${server === 'redis' ? 'Redis' : 'SnugKV'} · ${value.toFixed(2)} B/unit · source ${source}`}>
-                      <span>{server === 'redis' ? 'R' : 'S'}</span>
-                      <div><i className={server} style={{ width: `${value > 0 ? Math.max(1.5, (value / max) * 100) : 0}%` }} /></div>
-                      <b>{value > 0 ? value.toFixed(1) : '—'}</b>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="matrix-chart-note">HASH/LIST/SET/ZSET collapse small, medium and large profiles and use the lowest recorded RAM result for each server.</div>
+      <div className="matrix-chart-note">{note ?? 'Each axis is normalized to the faster server for that data type. Hover points for raw ops/s and source profile.'}</div>
     </div>
   )
 }
@@ -304,23 +277,24 @@ export default function MatrixCharts({ profiles }: Props) {
   const grouped = useMemo(() => aggregate(history, profiles), [history, profiles])
   const setData = useMemo(() => radarData(grouped, 'set'), [grouped])
   const getData = useMemo(() => radarData(grouped, 'get'), [grouped])
+  const memoryData = useMemo(() => memoryRadarData(grouped), [grouped])
 
   const fullscreenChart = fullscreen === 'set'
     ? <RadarChart title="SET / WRITE performance" subtitle="Best recorded result per data type" data={setData} />
     : fullscreen === 'get'
       ? <RadarChart title="GET / READ performance" subtitle="Best recorded result per data type" data={getData} />
       : fullscreen === 'memory'
-        ? <MemoryChart grouped={grouped} />
+        ? <RadarChart title="RAM per item" subtitle="Lowest recorded bytes per unit, per data type" data={memoryData} unit=" B/unit" note={MEMORY_NOTE} />
         : null
 
   return (
     <>
       <div className="matrix-charts">
         <div className="matrix-radar-grid-wrap">
+          <RadarChart title="RAM per item" subtitle="Lowest recorded bytes per unit, per data type" data={memoryData} unit=" B/unit" note={MEMORY_NOTE} onExpand={() => setFullscreen('memory')} />
           <RadarChart title="SET / WRITE performance" subtitle="Best recorded result per data type" data={setData} onExpand={() => setFullscreen('set')} />
           <RadarChart title="GET / READ performance" subtitle="Best recorded result per data type" data={getData} onExpand={() => setFullscreen('get')} />
         </div>
-        <MemoryChart grouped={grouped} onExpand={() => setFullscreen('memory')} />
       </div>
 
       {fullscreen && (
