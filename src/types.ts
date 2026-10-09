@@ -185,6 +185,12 @@ export type BestServerResult = {
   bestSet: number
   bestGet: number
   lowestBytesPerKey: number
+  /** Median of the latest runs with identical settings (see medianSettings). */
+  medianSet?: number
+  medianGet?: number
+  medianBytesPerKey?: number
+  medianRuns?: number
+  medianSettings?: string
   runs: number
   lastUpdated: string | null
   source: 'cli' | 'electron' | null
