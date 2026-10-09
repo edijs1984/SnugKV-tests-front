@@ -15,6 +15,7 @@ export type BenchmarkConfig = {
   /** Measured passes (1-3). Matrix runs use 1; omitted means 3. */
   repetitions?: number
   profileReplay?: boolean
+  diagnostics?: boolean
 }
 
 export type BenchResult = {
