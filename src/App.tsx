@@ -274,9 +274,6 @@ function App() {
   const selectedProfileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
   const activeMode = serverStatus.kind
   const adaptiveOn = activeMode === 'snug'
-  const encodingOn = adaptiveOn
-  const compressionOn = adaptiveOn
-  const jsonShapeOn = adaptiveOn
   const optimization = job?.optimization
   const optimizing = busy && adaptiveOn && optimization
   const optimizationStartMB = optimization?.start_used_memory ? optimization.start_used_memory / 1024 / 1024 : 0
@@ -427,21 +424,6 @@ function App() {
                     ? ' Restart SnugKV to apply.'
                     : ''}
                 </small>
-              </div>
-
-              <div className="feature-list">
-                <div className={encodingOn ? 'feature-row on' : 'feature-row'}>
-                  <span className="feature-toggle"><i /></span>
-                  <span>Encoding</span>
-                </div>
-                <div className={compressionOn ? 'feature-row on' : 'feature-row'}>
-                  <span className="feature-toggle"><i /></span>
-                  <span>Compression</span>
-                </div>
-                <div className={jsonShapeOn ? 'feature-row on' : 'feature-row'}>
-                  <span className="feature-toggle"><i /></span>
-                  <span>JSON shape</span>
-                </div>
               </div>
 
               <details className="advanced-box">
