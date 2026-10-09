@@ -17,6 +17,7 @@ declare global {
       onServerUpdate(callback: (status: ServerStatus) => void): () => void
       bestResults(profile: string): Promise<ProfileBestResults>
       resetBestResults(profile: string): Promise<ProfileBestResults>
+      resetAllStatistics(): Promise<boolean>
       onHistoryUpdate(callback: (payload: { profile: string; best: ProfileBestResults }) => void): () => void
       validationSuites(): Promise<ValidationSuite[]>
       startValidation(suiteId: ValidationSuiteId, options: ValidationOptions): Promise<ValidationJob>

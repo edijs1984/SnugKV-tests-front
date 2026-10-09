@@ -501,6 +501,23 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   border-color: rgba(255, 98, 98, .6);
   background: rgba(120, 25, 25, .2);
 }
+.clear-stats-btn {
+  border: 1px solid rgba(255, 98, 98, .34);
+  background: rgba(120, 25, 25, .12);
+  color: #ff9b9b;
+  border-radius: 9px;
+  padding: 9px 14px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.clear-stats-btn:hover:not(:disabled) {
+  border-color: rgba(255, 98, 98, .6);
+  background: rgba(120, 25, 25, .2);
+}
+.clear-stats-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
 .reset-bests-btn:disabled {
   opacity: .5;
   cursor: not-allowed;

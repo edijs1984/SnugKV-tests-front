@@ -124,6 +124,8 @@ function App() {
   const [appError, setAppError] = useState<string | null>(null)
   const [bestCopied, setBestCopied] = useState(false)
   const [resettingBest, setResettingBest] = useState(false)
+  const [statsEpoch, setStatsEpoch] = useState(0)
+  const [clearingStats, setClearingStats] = useState(false)
   const [best, setBest] = useState<ProfileBestResults>({
     redis: null,
     snug: null,
@@ -242,6 +244,23 @@ function App() {
     }
   }
 
+  async function clearAllStatistics() {
+    if (!window.confirm('Clear all statistics?\n\nThis resets the recorded best results for every profile and clears the matrix and sweep results on screen, so you can start fresh. Raw benchmark files on disk are kept.')) return
+
+    setClearingStats(true)
+    setAppError(null)
+    try {
+      await window.snugBench.resetAllStatistics()
+      setBest({ redis: null, snug: null })
+      setJob(null)
+      setStatsEpoch(epoch => epoch + 1)
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setClearingStats(false)
+    }
+  }
+
   async function copyProfileBests() {
     const profileLabel = profiles.find(([value]) => value === config.profile)?.[1] ?? config.profile
     const rows = [
@@ -349,6 +368,15 @@ function App() {
             Tests & Soak
           </button>
         </nav>
+
+        <button
+          className="clear-stats-btn"
+          disabled={clearingStats || busy || matrixBusy || sweepBusy}
+          onClick={clearAllStatistics}
+          title="Reset every recorded best result and clear matrix and sweep results"
+        >
+          {clearingStats ? 'Clearing…' : 'Clear all statistics'}
+        </button>
 
         <div className={`app-status ${activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'idle'}`}>
           <span className="status-dot" />
@@ -626,12 +654,14 @@ function App() {
 
         <div className="benchmark-wide-bottom">
           <PipelineSweep
+            key={`sweep-${statsEpoch}`}
             baseConfig={config}
             disabled={busy || serverBusy || matrixBusy}
             onRunningChange={setSweepBusy}
           />
 
           <BenchmarkMatrix
+            key={`matrix-${statsEpoch}`}
             profiles={profiles}
             baseConfig={config}
             disabled={busy || serverBusy || matrixBusy || sweepBusy}
