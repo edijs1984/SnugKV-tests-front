@@ -94,17 +94,21 @@ function aggregate(history: Record<string, ProfileBestResults>, profiles: readon
     for (const server of ['redis', 'snug'] as const) {
       const source = best[server]
       if (!source) continue
-      if (source.bestSet > current[server].set) {
-        current[server].set = source.bestSet
+      const setValue = source.medianSet && source.medianSet > 0 ? source.medianSet : source.bestSet
+      const getValue = source.medianGet && source.medianGet > 0 ? source.medianGet : source.bestGet
+      const memoryValue = source.medianBytesPerKey && source.medianBytesPerKey > 0
+        ? source.medianBytesPerKey
+        : source.lowestBytesPerKey
+      if (setValue > current[server].set) {
+        current[server].set = setValue
         current[server].setSource = profile
       }
-      if (source.bestGet > current[server].get) {
-        current[server].get = source.bestGet
+      if (getValue > current[server].get) {
+        current[server].get = getValue
         current[server].getSource = profile
       }
-      if (Number.isFinite(source.lowestBytesPerKey) && source.lowestBytesPerKey > 0 &&
-          source.lowestBytesPerKey < current[server].memory) {
-        current[server].memory = source.lowestBytesPerKey
+      if (Number.isFinite(memoryValue) && memoryValue > 0 && memoryValue < current[server].memory) {
+        current[server].memory = memoryValue
         current[server].memorySource = profile
       }
     }
@@ -239,7 +243,7 @@ function RadarChart({ title, subtitle, data, onExpand, unit = '/s', note }: { ti
           })
         })}
       </svg>
-      <div className="matrix-chart-note">{note ?? 'Each axis is normalized to the faster server for that data type. Hover points for raw ops/s and source profile.'}</div>
+      <div className="matrix-chart-note">{note ?? 'Each axis is normalized to the faster server for that data type. Values are the median of the latest runs with identical settings (falls back to best when there is no run history). Hover points for raw values and source profile.'}</div>
     </div>
   )
 }

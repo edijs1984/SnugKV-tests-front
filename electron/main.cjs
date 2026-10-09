@@ -641,6 +641,88 @@ function mergeBestResultSets(target, source) {
   return target
 }
 
+function median(values) {
+  const sorted = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b)
+  if (!sorted.length) return 0
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+const MEDIAN_WINDOW = 9
+
+// Median of the most recent runs that used identical settings (keys, workers,
+// pipeline, value size). Picks the newest settings that both servers have run,
+// so the charts compare like with like instead of each server's best ever.
+function medianResultsForProfile(profile) {
+  const root = join(app.getPath('userData'), 'runs')
+  const cutoff = resetCutoff(profile)
+  const out = { redis: null, snug: null }
+  if (!existsSync(root)) return out
+
+  const groups = new Map()
+  let dirs = []
+  try {
+    dirs = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory())
+  } catch {
+    return out
+  }
+
+  for (const entry of dirs) {
+    const dir = join(root, entry.name)
+    const loadPath = join(dir, 'load.json')
+    const getPath = join(dir, 'get.json')
+    if (!existsSync(loadPath) || !existsSync(getPath)) continue
+    try {
+      const at = statSync(loadPath).mtimeMs
+      if (cutoff > 0 && at <= cutoff) continue
+      const load = JSON.parse(readFileSync(loadPath, 'utf8'))
+      const get = JSON.parse(readFileSync(getPath, 'utf8'))
+      if (canonicalProfile(load.value_shape) !== profile || canonicalProfile(get.value_shape) !== profile) continue
+      const server = normalizeServerLabel(load.server)
+      if (!server) continue
+      const signature = [load.keys, load.workers, load.pipeline, load.value_bytes].join('|')
+      if (!groups.has(signature)) groups.set(signature, { redis: [], snug: [] })
+      groups.get(signature)[server].push({
+        at,
+        set: Number(load.ops_per_second) || 0,
+        get: Number(get.ops_per_second) || 0,
+        bytes: Number(load.bytes_per_key_delta) || 0,
+      })
+    } catch {
+      // Ignore incomplete run directories.
+    }
+  }
+
+  const newest = list => list.reduce((max, run) => Math.max(max, run.at), 0)
+  let chosen = null
+  let chosenAt = -1
+  let chosenBoth = false
+  for (const [signature, group] of groups) {
+    const both = group.redis.length > 0 && group.snug.length > 0
+    const at = Math.max(newest(group.redis), newest(group.snug))
+    if ((both && !chosenBoth) || (both === chosenBoth && at > chosenAt)) {
+      chosen = signature
+      chosenAt = at
+      chosenBoth = both
+    }
+  }
+  if (chosen === null) return out
+
+  for (const server of ['redis', 'snug']) {
+    const runs = groups.get(chosen)[server].sort((a, b) => b.at - a.at).slice(0, MEDIAN_WINDOW)
+    if (!runs.length) continue
+    const bytes = runs.map(run => run.bytes).filter(v => v > 0)
+    out[server] = {
+      medianSet: median(runs.map(run => run.set)),
+      medianGet: median(runs.map(run => run.get)),
+      medianBytesPerKey: bytes.length ? median(bytes) : 0,
+      medianRuns: runs.length,
+      medianSettings: chosen,
+    }
+  }
+  return out
+}
+
 function bestResultsForProfile(profile) {
   const result = scanCliHistory(profile)
   mergeBestResultSets(result, scanElectronRunHistory(profile))
@@ -694,6 +776,11 @@ function bestResultsForProfile(profile) {
       current.lastUpdated = record.lastUpdated
       current.source = record.source
     }
+  }
+
+  const medians = medianResultsForProfile(profile)
+  for (const key of ['redis', 'snug']) {
+    if (medians[key] && result[key]) Object.assign(result[key], medians[key])
   }
 
   return result
