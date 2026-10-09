@@ -337,6 +337,9 @@ function sanitize(body = {}) {
     // Measured passes per benchmark: 1 for matrix runs (Run all / Run selected),
     // user-selected (default 3, up to 50) for the single-benchmark view.
     repetitions: positiveInt(body.repetitions, 3, 50),
+    // Matrix runs skip the SnugKV profile replay so the database keeps the
+    // full data set that was measured.
+    profileReplay: body.profileReplay !== false,
   }
 }
 
@@ -1120,6 +1123,15 @@ async function runSnugProfileReplay(config, parentOut) {
       skipped: true,
       reason: 'not snug',
       cpu: { ok: false, skipped: true, reason: 'not snug' },
+      output: '',
+    }
+  }
+
+  if (config.profileReplay === false) {
+    return {
+      skipped: true,
+      reason: 'disabled for matrix runs',
+      cpu: { ok: false, skipped: true, reason: 'disabled for matrix runs' },
       output: '',
     }
   }
