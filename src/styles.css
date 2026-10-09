@@ -2230,3 +2230,10 @@ input:focus, select:focus { border-color: #ff7a1a; box-shadow: 0 0 0 2px rgba(25
   .dbm-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
   .dbm-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.run-timer {
+  align-self: center;
+  color: var(--muted, #8b95a7);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}

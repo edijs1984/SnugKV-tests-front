@@ -415,11 +415,12 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
             <span>Passed <b>{completed.length}</b></span>
             <span>Failed <b>{failed.length}</b></span>
             <span>Total <b>{rows.length}</b></span>
+            <span>Time <b>{(rows.reduce((sum, row) => sum + (row.startedAt && row.finishedAt ? Date.parse(row.finishedAt) - Date.parse(row.startedAt) : 0), 0) / 1000).toFixed(0)} s</b></span>
           </div>
 
           <div className="matrix-table-wrap">
             <table className="matrix-table">
-              <thead><tr><th>Profile</th><th>Server</th><th>Status</th><th>WRITE/s</th><th>READ/s</th><th>p95 WRITE</th><th>p95 READ</th><th>Final memory</th><th>Final B/key</th><th>Hot B/key</th></tr></thead>
+              <thead><tr><th>Profile</th><th>Server</th><th>Status</th><th>WRITE/s</th><th>READ/s</th><th>p95 WRITE</th><th>p95 READ</th><th>Final memory</th><th>Final B/key</th><th>Hot B/key</th><th>Time</th></tr></thead>
               <tbody>
                 {rows.map(row => {
                   const load = row.job?.results?.load
@@ -438,6 +439,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
                     <td>{memory === null ? '—' : `${(memory / 1024 / 1024).toFixed(1)} MB`}</td>
                     <td>{bpk === null ? '—' : bpk.toFixed(2)}</td>
                     <td>{hotBpk === null ? '—' : hotBpk.toFixed(2)}</td>
+                    <td>{row.startedAt && row.finishedAt ? `${((Date.parse(row.finishedAt) - Date.parse(row.startedAt)) / 1000).toFixed(1)} s` : '—'}</td>
                   </tr>
                 })}
               </tbody>
