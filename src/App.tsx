@@ -87,11 +87,35 @@ function mergeCompletedJobIntoBest(
   }
 }
 
+function seconds(ms: number) {
+  return `${(Math.max(0, ms) / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`
+}
+
+// Live elapsed time while a benchmark runs, and a breakdown once it finished.
+function RunTimer({ job, busy, now }: { job: Job | null; busy: boolean; now: number }) {
+  if (!job?.startedAt) return null
+  const started = Date.parse(job.startedAt)
+  if (busy) {
+    const phase = job.optimization ? ' · settling memory' : ''
+    return <span className="run-timer">⏱ {seconds(now - started)}{phase}</span>
+  }
+  if (!job.finishedAt) return null
+  const total = Date.parse(job.finishedAt) - started
+  const load = job.results?.load
+  const get = job.results?.get
+  const parts = [`total ${seconds(total)}`]
+  if (load?.duration_ns) parts.push(`write ${seconds(load.duration_ns / 1e6)}`)
+  if (get?.duration_ns) parts.push(`read ${seconds(get.duration_ns / 1e6)}`)
+  if (load?.convergence_elapsed_ms) parts.push(`memory settle ${seconds(load.convergence_elapsed_ms)}`)
+  return <span className="run-timer">⏱ {parts.join(' · ')}</span>
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<'benchmark' | 'database' | 'validation'>('benchmark')
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const [matrixBusy, setMatrixBusy] = useState(false)
   const [sweepBusy, setSweepBusy] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -181,6 +205,12 @@ function App() {
       setServerBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (!busy) return
+    const timer = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [busy])
 
   async function run() {
     setBusy(true)
@@ -450,6 +480,7 @@ function App() {
                   <span className="play-icon">▶</span>
                   {busy ? 'Benchmark running…' : 'Run benchmark'}
                 </button>
+                {(busy || job?.startedAt) && <RunTimer job={job} busy={busy} now={now} />}
                 {busy && <button className="secondary-stop" onClick={() => window.snugBench.cancel()}>Cancel</button>}
               </div>
             </section>

@@ -1986,9 +1986,12 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   }
 
   const diagnosticsStartedAt = Date.now()
-  const diagnosticsBefore = diagnosticSnapshot(c)
+  const diagnosticsOn = c.diagnostics !== false
+  const snapshot = () => (diagnosticsOn ? diagnosticSnapshot(c) : null)
+  const diagnosticsBefore = snapshot()
   const processSamples = []
   const sampleProcess = () => {
+    if (!diagnosticsOn) return
     const proc = readProcMetrics(benchmarkServerPid(c))
     processSamples.push({
       elapsed_ms: Date.now() - diagnosticsStartedAt,
@@ -1998,7 +2001,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     if (processSamples.length > 1200) processSamples.shift()
   }
   sampleProcess()
-  const sampleTimer = setInterval(sampleProcess, 250)
+  const sampleTimer = diagnosticsOn ? setInterval(sampleProcess, 250) : null
 
   const child = spawn(bashPath(), args, {
     cwd: snugRepo(),
@@ -2064,7 +2067,7 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
   })
 
   child.on('close', async code => {
-    clearInterval(sampleTimer)
+    if (sampleTimer) clearInterval(sampleTimer)
     sampleProcess()
     job.finishedAt = new Date().toISOString()
     activeChild = null
@@ -2119,9 +2122,9 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
 
     const runProfile = await finishRunProfiler(runProfiler, c, out)
     const repetitionSummary = summarizeRepetitions(measuredRepetitions)
-    const diagnosticsAfterMeasured = diagnosticSnapshot(c)
+    const diagnosticsAfterMeasured = snapshot()
     const profilingReplay = await runSnugProfileReplay(c, out)
-    const diagnosticsAfterProfilingReplay = normalizeServerLabel(c.server) === 'snug'
+    const diagnosticsAfterProfilingReplay = normalizeServerLabel(c.server) === 'snug' && diagnosticsOn
       ? diagnosticSnapshot(c)
       : null
     const heap = normalizeServerLabel(c.server) === 'snug' && c.diagnostics !== false

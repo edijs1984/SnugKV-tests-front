@@ -37,6 +37,7 @@ export type BenchResult = {
   converged?: boolean
   convergence_elapsed_ms?: number
   convergence_samples?: number
+  duration_ns?: number
 }
 
 export type OptimizationProgress = {
