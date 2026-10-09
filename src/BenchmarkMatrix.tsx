@@ -171,6 +171,7 @@ export default function BenchmarkMatrix({ profiles, baseConfig, disabled, onRunn
             const config: BenchmarkConfig = {
               ...baseConfig,
               repetitions: 1, // one measured pass per data type per server
+              diagnostics: false, // no profiling while measuring
               profileReplay: false, // keep the full measured data set in the database
               profile,
               host: '127.0.0.1',

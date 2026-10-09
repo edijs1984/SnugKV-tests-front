@@ -340,6 +340,9 @@ function sanitize(body = {}) {
     // Matrix runs skip the SnugKV profile replay so the database keeps the
     // full data set that was measured.
     profileReplay: body.profileReplay !== false,
+    // Diagnostics (CPU/heap/mutex profiling during the run, the profile replay
+    // and the post-run pprof reports) are SnugKV-only and slow the run down.
+    diagnostics: body.diagnostics !== false,
   }
 }
 
@@ -879,7 +882,7 @@ function downloadTo(url, file, timeoutMs) {
 
 function startRunProfiler(config, out) {
   const state = { files: [], stopped: false, done: null }
-  if (normalizeServerLabel(config?.server) !== 'snug') {
+  if (normalizeServerLabel(config?.server) !== 'snug' || config?.diagnostics === false) {
     state.done = Promise.resolve()
     return state
   }
@@ -911,8 +914,8 @@ function pprofText(args) {
 }
 
 async function finishRunProfiler(state, config, out) {
-  if (normalizeServerLabel(config?.server) !== 'snug') {
-    return { skipped: true, reason: 'not snug' }
+  if (normalizeServerLabel(config?.server) !== 'snug' || config?.diagnostics === false) {
+    return { skipped: true, reason: config?.diagnostics === false ? 'diagnostics off' : 'not snug' }
   }
   state.stopped = true
   await state.done
@@ -1127,7 +1130,7 @@ async function runSnugProfileReplay(config, parentOut) {
     }
   }
 
-  if (config.profileReplay === false) {
+  if (config.diagnostics === false || config.profileReplay === false) {
     return {
       skipped: true,
       reason: 'disabled for matrix runs',
@@ -2121,10 +2124,10 @@ ipcMain.handle('bench:start', async (_event, rawConfig) => {
     const diagnosticsAfterProfilingReplay = normalizeServerLabel(c.server) === 'snug'
       ? diagnosticSnapshot(c)
       : null
-    const heap = normalizeServerLabel(c.server) === 'snug'
+    const heap = normalizeServerLabel(c.server) === 'snug' && c.diagnostics !== false
       ? await startPprofTop(c, 'heap')
       : { ok: false, skipped: true, reason: 'not snug' }
-    const alloc = normalizeServerLabel(c.server) === 'snug'
+    const alloc = normalizeServerLabel(c.server) === 'snug' && c.diagnostics !== false
       ? await startPprofTop(c, 'alloc')
       : { ok: false, skipped: true, reason: 'not snug' }
 

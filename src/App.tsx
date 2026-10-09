@@ -42,6 +42,7 @@ const initial: BenchmarkConfig = {
   seed: 1,
   optimizerMode: 'dedicated',
   repetitions: 3,
+  diagnostics: true,
 }
 
 const nf = new Intl.NumberFormat('en-US')
@@ -397,6 +398,11 @@ function App() {
               <label className="compact-field">
                 <span>Runs</span>
                 <input type="number" min={1} max={50} value={config.repetitions ?? 3} onChange={e => field('repetitions', Math.max(1, Math.min(50, Math.round(+e.target.value) || 1)))} />
+              </label>
+
+              <label className="compact-field" title="SnugKV only: CPU/heap profiling during the run plus a profile replay afterwards. Slower, and profiling adds overhead to the measured run.">
+                <span>Diagnostics</span>
+                <input type="checkbox" checked={config.diagnostics !== false} onChange={e => field('diagnostics', e.target.checked)} />
               </label>
 
               <div className="optimizer-mode-block">
