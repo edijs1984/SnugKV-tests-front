@@ -335,8 +335,8 @@ function sanitize(body = {}) {
     seed: Number.isSafeInteger(Number(body.seed)) ? Number(body.seed) : 1,
     optimizerMode: body.optimizerMode === 'sidecar' ? 'sidecar' : 'dedicated',
     // Measured passes per benchmark: 1 for matrix runs (Run all / Run selected),
-    // 3 (default) for the single-benchmark diagnostics view.
-    repetitions: positiveInt(body.repetitions, 3, 3),
+    // user-selected (default 3, up to 50) for the single-benchmark view.
+    repetitions: positiveInt(body.repetitions, 3, 50),
   }
 }
 

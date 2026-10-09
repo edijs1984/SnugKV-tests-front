@@ -41,6 +41,7 @@ const initial: BenchmarkConfig = {
   settleMs: 0,
   seed: 1,
   optimizerMode: 'dedicated',
+  repetitions: 3,
 }
 
 const nf = new Intl.NumberFormat('en-US')
@@ -394,6 +395,11 @@ function App() {
               <label className="compact-field">
                 <span>Pipeline</span>
                 <input type="number" value={config.pipeline} onChange={e => field('pipeline', +e.target.value)} />
+              </label>
+
+              <label className="compact-field">
+                <span>Runs</span>
+                <input type="number" min={1} max={50} value={config.repetitions ?? 3} onChange={e => field('repetitions', Math.max(1, Math.min(50, Math.round(+e.target.value) || 1)))} />
               </label>
 
               <div className="optimizer-mode-block">
