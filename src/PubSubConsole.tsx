@@ -262,16 +262,17 @@ function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, c
     setResults(prev => [{ id: nextResult.current++, ts: Date.now(), text, reply, error, ms }, ...prev].slice(0, 40))
   }
 
-  async function guard(action: () => Promise<void>) {
+  async function guard(action: () => Promise<void>, logError = true) {
     setBusy(true)
     try { await action() } catch (err) {
       const message = err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err)
-      pushLog('error', message)
+      if (logError) pushLog('error', message)
       addResult('', message, true)
     } finally { setBusy(false) }
   }
 
-  const connect = () => guard(async () => { setConn('connecting'); try { await api.connect(id, addr) } catch (err) { setConn('error'); throw err } })
+  // The main process already reports connection failures as events, so do not log them twice.
+  const connect = () => guard(async () => { setConn('connecting'); try { await api.connect(id, addr) } catch (err) { setConn('error'); throw err } }, false)
   const disconnect = () => guard(async () => { await api.disconnect(id); setConn('disconnected') })
 
   const run = (text: string) => guard(async () => {

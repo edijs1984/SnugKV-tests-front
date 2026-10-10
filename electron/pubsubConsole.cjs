@@ -132,6 +132,7 @@ class Window {
     this.cmd = null
     this.sub = null
     this.queue = []
+    this.userClosed = true
     this.subscribed = null
     this.received = 0
   }
@@ -144,8 +145,14 @@ class Window {
   }
 
   connect(addr) {
+    this.disconnect()
+    this.userClosed = false
+    return this.open(addr)
+  }
+
+  // Opens the command connection without touching an active subscription.
+  open(addr) {
     return new Promise((resolve, reject) => {
-      this.disconnect()
       let target
       try { target = this.parseAddr(addr) } catch (error) { this.event('error', { message: error.message }); return reject(error) }
       this.addr = `${target.host}:${target.port}`
@@ -185,20 +192,31 @@ class Window {
         failAll(new Error('connection closed'))
         if (this.cmd === socket) this.cmd = null
         if (opened) {
-          this.event('status', { state: 'disconnected', addr: this.addr, expected: Boolean(socket.expectedClose) })
-          if (!socket.expectedClose) this.event('error', { message: `${this.addr} closed the command connection` })
+          if (socket.expectedClose) this.event('status', { state: 'disconnected', addr: this.addr, expected: true })
+          else this.event('info', { message: `${this.addr} closed the idle command connection; it reconnects on the next command` })
         }
       })
     })
   }
 
   disconnect() {
+    this.userClosed = true
     this.unsubscribe(true)
     if (this.cmd) { this.cmd.expectedClose = true; this.cmd.destroy() }
     this.cmd = null
   }
 
-  command(args) {
+  async command(args) {
+    // Servers close idle command connections (SnugKV after 30 s by default), so
+    // reopen once instead of failing the user's next click.
+    if ((!this.cmd || this.cmd.destroyed) && this.addr && !this.userClosed) {
+      this.event('info', { message: `reconnecting to ${this.addr}` })
+      await this.open(this.addr)
+    }
+    return this.send(args)
+  }
+
+  send(args) {
     return new Promise((resolve, reject) => {
       if (!this.cmd || this.cmd.destroyed) return reject(new Error('not connected'))
       const started = process.hrtime.bigint()
@@ -390,6 +408,13 @@ class Console {
 
   async stopServers() {
     this.stopping = true
+    const ports = new Set(Object.values(this.managed).map(m => String(m.port)))
+    for (const w of Object.values(this.windows)) {
+      if (w.addr && ports.has(w.addr.split(':').pop())) {
+        if (w.sub) w.sub.expectedClose = true
+        if (w.cmd) w.cmd.expectedClose = true
+      }
+    }
     for (const child of [...this.children]) { try { child.kill('SIGTERM') } catch { /* gone */ } }
     const deadline = Date.now() + 3000
     while (this.children.size && Date.now() < deadline) await new Promise(r => setTimeout(r, 50))

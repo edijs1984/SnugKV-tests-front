@@ -2371,3 +2371,7 @@ button.psc-chip:hover { border-color: #ff7a1a; color: #ffb06e; }
 .psc-row .psc-btn, .psc-row .secondary-stop { flex: 0 0 auto; }
 @media (max-width: 1100px) { .psc-switch { padding-left: 16px; } }
 .psc-check { white-space: nowrap; }
+.psc-tab { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.psc-switch { flex: 0 0 auto; align-self: flex-start; }
+.psc-view { flex: 1 1 auto; min-width: 0; }
+.psc-view > .validation-lab { min-height: 0; }
