@@ -9,6 +9,7 @@ const net = require('node:net')
 const profileNames = [
   'session-json', 'api-json', 'cache-json', 'counter', 'uuid', 'ulid',
   'text', 'repetitive', 'compressed', 'random',
+  'eth-hash', 'eth-address', 'sol-pubkey', 'sol-signature', 'uint256',
   'hash-small', 'hash-medium', 'hash-large',
   'list-small', 'list-medium', 'list-large',
   'set-small', 'set-medium', 'set-large',
