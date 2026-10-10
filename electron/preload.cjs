@@ -36,6 +36,13 @@ contextBridge.exposeInMainWorld('snugBench', {
     ipcRenderer.on('validation:update', listener)
     return () => ipcRenderer.removeListener('validation:update', listener)
   },
+  startRpcLab: config => ipcRenderer.invoke('rpc:start', config),
+  cancelRpcLab: () => ipcRenderer.invoke('rpc:cancel'),
+  onRpcUpdate: callback => {
+    const listener = (_event, job) => callback(job)
+    ipcRenderer.on('rpc:update', listener)
+    return () => ipcRenderer.removeListener('rpc:update', listener)
+  },
   dbListKeys: options => ipcRenderer.invoke('db:list-keys', options),
   dbGetKey: options => ipcRenderer.invoke('db:get-key', options),
   dbSetString: options => ipcRenderer.invoke('db:set-string', options),

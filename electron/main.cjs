@@ -23,6 +23,7 @@ let activeChild = null
 let activeValidation = null
 let activeValidationCancelled = false
 let activeServer = null
+let activeRpc = null
 
 
 const validationSuites = [
@@ -2036,6 +2037,56 @@ ipcMain.handle('validation:cancel', () => {
   return true
 })
 
+// ---- RPC cache lab ----
+// Runs rpccache plus the rpcbench wallet simulation against SnugKV and Redis
+// on private loopback ports (see electron/rpcLab.cjs). It never touches the
+// servers managed by the Benchmark tab.
+function emitRpc(job) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpc:update', job)
+}
+
+ipcMain.handle('rpc:start', async (_event, request = {}) => {
+  if (activeRpc) throw new Error('An RPC cache run is already in progress')
+  if (activeChild) throw new Error('Cannot start an RPC cache run while a benchmark is running')
+  if (activeValidation) throw new Error('Cannot start an RPC cache run while validation is running')
+
+  const { runRpcLab, sanitizeRpcConfig } = require('./rpcLab.cjs')
+  const config = sanitizeRpcConfig(request)
+  const state = { cancelled: false, stop: null }
+  const base = { id: randomUUID(), status: 'running', startedAt: new Date().toISOString() }
+  activeRpc = state
+
+  const ctx = {
+    repo: snugRepo(),
+    go: goPath(),
+    env: runtimeEnv(),
+    binDir: join(app.getPath('userData'), 'bin'),
+    redisServer: redisServerPath(),
+    isCancelled: () => state.cancelled,
+    registerStop: fn => { state.stop = fn },
+    emit: job => emitRpc({ ...base, ...job, status: 'running' }),
+  }
+
+  const first = { ...base, config, results: [], log: '', stage: 'Preparing', commands: [] }
+  runRpcLab(config, ctx)
+    .then(job => emitRpc({ ...base, ...job, finishedAt: new Date().toISOString() }))
+    .catch(error => emitRpc({
+      ...first,
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      finishedAt: new Date().toISOString(),
+    }))
+    .finally(() => { if (activeRpc === state) activeRpc = null })
+  return first
+})
+
+ipcMain.handle('rpc:cancel', async () => {
+  if (!activeRpc) return false
+  activeRpc.cancelled = true
+  await activeRpc.stop?.()
+  return true
+})
+
 ipcMain.handle('bench:environment', () => ({
   snugkvRepo: snugRepo(),
   script: scriptPath(),
@@ -2366,6 +2417,10 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  if (activeRpc) {
+    activeRpc.cancelled = true
+    activeRpc.stop?.()
+  }
   if (activeChild) activeChild.kill('SIGTERM')
   if (activeValidation) stopProcessTree(activeValidation)
   if (activeServer?.child) activeServer.child.kill('SIGTERM')

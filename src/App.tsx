@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
 import ValidationLab from './ValidationLab'
+import RpcLab from './RpcLab'
 import DatabaseBrowser from './DatabaseBrowser'
 import BenchmarkMatrix from './BenchmarkMatrix'
 import PipelineSweep from './PipelineSweep'
@@ -120,7 +121,7 @@ function RunTimer({ job, busy, now }: { job: Job | null; busy: boolean; now: num
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'benchmark' | 'database' | 'validation'>('benchmark')
+  const [activeTab, setActiveTab] = useState<'benchmark' | 'database' | 'validation' | 'rpc'>('benchmark')
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
@@ -376,6 +377,12 @@ function App() {
           >
             Tests & Soak
           </button>
+          <button
+            className={activeTab === 'rpc' ? 'active' : ''}
+            onClick={() => setActiveTab('rpc')}
+          >
+            RPC cache
+          </button>
         </nav>
 
         <button
@@ -389,7 +396,7 @@ function App() {
 
         <div className={`app-status ${activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'idle'}`}>
           <span className="status-dot" />
-          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : activeTab === 'database' ? (serverStatus.running ? 'connected' : 'offline') : 'validation'}</span>
+          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : activeTab === 'database' ? (serverStatus.running ? 'connected' : 'offline') : activeTab === 'rpc' ? 'rpc cache' : 'validation'}</span>
         </div>
       </header>
 
@@ -680,6 +687,8 @@ function App() {
       </section>
       ) : activeTab === 'database' ? (
         <DatabaseBrowser serverStatus={serverStatus} />
+      ) : activeTab === 'rpc' ? (
+        <RpcLab />
       ) : (
         <ValidationLab />
       )}
