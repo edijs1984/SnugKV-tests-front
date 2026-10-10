@@ -484,7 +484,7 @@ export type PubSubLabJob = {
 export type ConsoleEvent = {
   window: 'A' | 'B' | '*'
   ts: number
-  kind: 'status' | 'sub' | 'message' | 'publish' | 'error' | 'info'
+  kind: 'status' | 'sub' | 'message' | 'publish' | 'error' | 'info' | 'durable-ack'
   state?: string
   addr?: string
   expected?: boolean
@@ -502,6 +502,13 @@ export type ConsoleEvent = {
   errors?: number
   firstError?: string | null
   ms?: number
+  durable?: boolean
+  id?: string
+  ids?: string[]
+  group?: string
+  topic?: string
+  redelivered?: boolean
+  stored?: number | null
 }
 
 export type ConsoleRunResult = { reply: string; error: boolean; ms: number }
@@ -517,3 +524,16 @@ export type ConsoleServerOptions = {
   sendTimeoutMs: number
   queueSize: number
 }
+
+export type DurableOptions = {
+  topic: string
+  /** all: every subscriber gets each message. one: subscribers share them. */
+  mode: 'all' | 'one'
+  name: string
+  ack: 'auto' | 'manual'
+  /** Redeliver unacknowledged messages after this many milliseconds, 0 = never. */
+  redeliverMs: number
+}
+
+export type DurableGroup = { name: string; consumers: number; pending: number; lastDelivered: string; lag: number | null }
+export type DurableBacklog = { topic: string; stored: number; groups: DurableGroup[] }

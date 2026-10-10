@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ConsoleEvent, ConsoleServerOptions } from './types'
+import type { ConsoleEvent, ConsoleServerOptions, DurableBacklog, DurableOptions } from './types'
 
 type WinId = 'A' | 'B'
 type Conn = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
-type Msg = { id: number; ts: number; type: string; channel: string; pattern?: string; payload: string; bytes: number; latency?: number }
+type Msg = { id: number; ts: number; type: string; channel: string; pattern?: string; payload: string; bytes: number; latency?: number; sid?: string; group?: string; redelivered?: boolean }
 type LogLine = { id: number; ts: number; window: ConsoleEvent['window']; level: 'error' | 'info' | 'ok'; text: string }
 type Result = { id: number; ts: number; text: string; reply: string; error: boolean; ms?: number }
 
@@ -40,7 +40,9 @@ function describe(event: ConsoleEvent): { level: LogLine['level']; text: string 
     case 'publish':
       return {
         level: event.errors ? 'error' : 'ok',
-        text: `published ${event.sent}${event.count && event.count > 1 ? ` of ${event.count}` : ''} to ${event.channel}: ${event.receivers} deliveries in ${event.ms} ms${event.firstError ? ` - ${event.firstError}` : ''}`,
+        text: event.durable
+          ? `stored ${event.sent}${event.count && event.count > 1 ? ` of ${event.count}` : ''} on ${event.channel} (${event.stored ?? '?'} waiting) in ${event.ms} ms${event.firstError ? ` - ${event.firstError}` : ''}`
+          : `published ${event.sent}${event.count && event.count > 1 ? ` of ${event.count}` : ''} to ${event.channel}: ${event.receivers} deliveries in ${event.ms} ms${event.firstError ? ` - ${event.firstError}` : ''}`,
       }
     default: return null
   }
@@ -55,6 +57,7 @@ export default function PubSubConsole() {
   const [subs, setSubs] = useState<Record<WinId, string[]>>({ A: [], B: [] })
   const [messages, setMessages] = useState<Record<WinId, Msg[]>>({ A: [], B: [] })
   const [received, setReceived] = useState<Record<WinId, number>>({ A: 0, B: 0 })
+  const [acked, setAcked] = useState<Record<WinId, Record<string, true>>>({ A: {}, B: {} })
   const [log, setLog] = useState<LogLine[]>([])
   const [errorsOnly, setErrorsOnly] = useState(false)
   const pending = useRef<ConsoleEvent[]>([])
@@ -70,6 +73,7 @@ export default function PubSubConsole() {
       const counts: Record<WinId, number> = { A: 0, B: 0 }
       const lines: LogLine[] = []
       const connUpdates: Partial<Record<WinId, Conn>> = {}
+      const ackUpdates: Record<WinId, string[]> = { A: [], B: [] }
       const subUpdates: Partial<Record<WinId, (names: string[]) => string[]>> = {}
       for (const event of batch) {
         if (event.kind === 'message' && (event.window === 'A' || event.window === 'B')) {
@@ -77,8 +81,13 @@ export default function PubSubConsole() {
           newMessages[event.window].push({
             id: nextId.current++, ts: event.ts, type: event.type ?? 'message', channel: event.channel ?? '', pattern: event.pattern,
             payload: event.payload ?? '', bytes: event.bytes ?? 0, latency: stamp ? event.ts - Number(stamp[1]) : undefined,
+            sid: event.id, group: event.group, redelivered: event.redelivered,
           })
           counts[event.window]++
+          continue
+        }
+        if (event.kind === 'durable-ack' && (event.window === 'A' || event.window === 'B')) {
+          for (const sid of event.ids ?? []) ackUpdates[event.window].push(`${event.group}:${sid}`)
           continue
         }
         if (event.window === 'A' || event.window === 'B') {
@@ -106,6 +115,12 @@ export default function PubSubConsole() {
           B: newMessages.B.length ? [...prev.B, ...newMessages.B].slice(-MAX_MESSAGES) : prev.B,
         }))
         setReceived(prev => ({ A: prev.A + counts.A, B: prev.B + counts.B }))
+      }
+      if (ackUpdates.A.length || ackUpdates.B.length) {
+        setAcked(prev => ({
+          A: ackUpdates.A.length ? { ...prev.A, ...Object.fromEntries(ackUpdates.A.map(k => [k, true as const])) } : prev.A,
+          B: ackUpdates.B.length ? { ...prev.B, ...Object.fromEntries(ackUpdates.B.map(k => [k, true as const])) } : prev.B,
+        }))
       }
       if (lines.length) setLog(prev => [...prev, ...lines].slice(-MAX_LOG))
     }, 100)
@@ -184,6 +199,7 @@ export default function PubSubConsole() {
               subs={subs[id]}
               messages={messages[id]}
               received={received[id]}
+              acked={acked[id]}
               clearMessages={() => { setMessages(prev => ({ ...prev, [id]: [] })); setReceived(prev => ({ ...prev, [id]: 0 })) }}
               pushLog={(level, text) => setLog(prev => {
                 const last = prev[prev.length - 1]
@@ -194,6 +210,8 @@ export default function PubSubConsole() {
             />
           ))}
         </div>
+
+        <Backlog conn={conn} pushLog={(level, text) => setLog(prev => [...prev, { id: nextId.current++, ts: Date.now(), window: '*' as const, level, text }].slice(-MAX_LOG))} />
 
         <div className="validation-console psc-log">
           <div className="console-head">
@@ -230,12 +248,13 @@ type WindowProps = {
   subs: string[]
   messages: Msg[]
   received: number
+  acked: Record<string, true>
   clearMessages: () => void
   pushLog: (level: LogLine['level'], text: string) => void
   defaultAddr: string
 }
 
-function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, clearMessages, pushLog, defaultAddr }: WindowProps) {
+function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, acked, clearMessages, pushLog, defaultAddr }: WindowProps) {
   const api = window.snugBench.console
   const [addr, setAddr] = useState(defaultAddr)
   const [channel, setChannel] = useState('news')
@@ -251,10 +270,19 @@ function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, c
   const [paused, setPaused] = useState(false)
   const [frozen, setFrozen] = useState<Msg[]>([])
   const [busy, setBusy] = useState(false)
+  const [delivery, setDelivery] = useState<'live' | 'durable'>('live')
+  const [subKind, setSubKind] = useState<'live' | 'durable'>('live')
+  const [maxlen, setMaxlen] = useState(0)
+  const [dMode, setDMode] = useState<'all' | 'one'>('all')
+  const [dName, setDName] = useState(id === 'A' ? 'amy' : 'bob')
+  const [dAck, setDAck] = useState<'auto' | 'manual'>('auto')
+  const [dRedeliver, setDRedeliver] = useState(10)
   const nextResult = useRef(1)
 
   const connected = conn === 'connected'
   const shownMessages = paused ? frozen : messages
+  const unacked = shownMessages.filter(m => m.sid && !acked[`${m.group}:${m.sid}`])
+  const unackedCount = unacked.length
   const latencies = shownMessages.filter(m => m.latency !== undefined).map(m => m.latency as number)
   const avgLatency = latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : undefined
 
@@ -281,12 +309,24 @@ function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, c
     if (res.error) pushLog('error', `${text.split(' ')[0].toUpperCase()}: ${res.reply}`)
   })
 
+  const publishDurable = () => guard(async () => {
+    const res = await api.durablePublish(id, channel, body, count, maxlen)
+    addResult(`STORE ${channel}${count > 1 ? ` x${count}` : ''}`, `${res.sent} stored, ${res.stored ?? '?'} waiting${res.errors ? `, error: ${res.firstError}` : ''}`, res.errors > 0, res.ms)
+  })
+  const durableOpts = (): DurableOptions => ({ topic: targets, mode: dMode, name: dName, ack: dAck, redeliverMs: dAck === 'manual' ? dRedeliver * 1000 : 0 })
+  const subscribeDurable = () => guard(async () => { await api.durableSubscribe(id, durableOpts()); setSubKind('durable') })
+  const pauseDurable = () => guard(async () => { await api.durableStop(id) })
+  const ackIds = (list: Msg[]) => guard(async () => {
+    const byGroup = new Map<string, string[]>()
+    for (const m of list) if (m.sid && m.group) byGroup.set(m.group, [...(byGroup.get(m.group) ?? []), m.sid])
+    for (const [group, ids] of byGroup) await api.durableAck(id, list[0].channel, group, ids)
+  })
   const publish = () => guard(async () => {
     const res = await api.publish(id, channel, body, count)
     addResult(`PUBLISH ${channel}${count > 1 ? ` x${count}` : ''}`, `${res.receivers} deliveries${res.errors ? `, ${res.errors} error: ${res.firstError}` : ''}`, res.errors > 0, res.ms)
   })
 
-  const subscribe = () => guard(async () => { await api.subscribe(id, mode, targets.split(',')) })
+  const subscribe = () => guard(async () => { await api.subscribe(id, mode, targets.split(',')); setSubKind('live') })
   const unsubscribe = () => guard(async () => { await api.unsubscribe(id) })
 
   const quote = (s: string) => (/[\s"']/.test(s) || s === '' ? `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : s)
@@ -314,38 +354,68 @@ function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, c
         </div>
       )}
 
+      <div className="psc-seg" role="tablist">
+        <button className={delivery === 'live' ? 'active' : ''} onClick={() => setDelivery('live')} title="Plain Pub/Sub: only subscribers connected right now receive it">Live</button>
+        <button className={delivery === 'durable' ? 'active' : ''} onClick={() => setDelivery('durable')} title="Kept on the server until subscribers have received and acknowledged it">Stored until delivered</button>
+      </div>
+
       <fieldset className="psc-box" disabled={!connected}>
-        <legend>Publish</legend>
+        <legend>{delivery === 'live' ? 'Publish' : 'Publish and store'}</legend>
         <div className="psc-row">
-          <input value={channel} onChange={e => setChannel(e.target.value)} placeholder="channel" />
+          <input value={channel} onChange={e => setChannel(e.target.value)} placeholder={delivery === 'live' ? 'channel' : 'topic'} />
           <input className="psc-count" type="number" min={1} max={100000} value={count} onChange={e => setCount(Number(e.target.value))} title="Number of messages" />
         </div>
         <textarea rows={2} value={body} onChange={e => setBody(e.target.value)} placeholder="message; {n} = sequence number, {ts} = time" />
         <div className="psc-row">
-          <button className="primary-run psc-btn" disabled={busy} onClick={publish}>Publish{count > 1 ? ` ×${count}` : ''}</button>
+          {delivery === 'durable' && <input className="psc-count" type="number" min={0} value={maxlen} onChange={e => setMaxlen(Number(e.target.value))} title="Keep at most this many waiting messages, 0 = no limit" />}
+          <button className="primary-run psc-btn" disabled={busy} onClick={delivery === 'live' ? publish : publishDurable}>{delivery === 'live' ? 'Publish' : 'Store'}{count > 1 ? ` ×${count}` : ''}</button>
           <small>{'{n}'} is replaced by the message number and {'{ts}'} by the send time, so the other window can show latency.</small>
         </div>
       </fieldset>
 
       <fieldset className="psc-box" disabled={!connected}>
-        <legend>Subscribe</legend>
-        <div className="psc-row">
-          <select value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
-            <option value="channel">SUBSCRIBE</option>
-            <option value="pattern">PSUBSCRIBE</option>
-            <option value="shard">SSUBSCRIBE</option>
-          </select>
-          <input value={targets} onChange={e => setTargets(e.target.value)} placeholder="channels, comma separated" />
-          {subs.length > 0
-            ? <button className="secondary-stop" disabled={busy} onClick={unsubscribe}>Stop</button>
-            : <button className="primary-run psc-btn" disabled={busy} onClick={subscribe}>Subscribe</button>}
-        </div>
+        <legend>{delivery === 'live' ? 'Subscribe' : 'Receive stored messages'}</legend>
+        {delivery === 'live' ? (
+          <div className="psc-row">
+            <select value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
+              <option value="channel">SUBSCRIBE</option>
+              <option value="pattern">PSUBSCRIBE</option>
+              <option value="shard">SSUBSCRIBE</option>
+            </select>
+            <input value={targets} onChange={e => setTargets(e.target.value)} placeholder="channels, comma separated" />
+            {subs.length > 0
+              ? <button className="secondary-stop" disabled={busy} onClick={subKind === 'live' ? unsubscribe : pauseDurable}>Stop</button>
+              : <button className="primary-run psc-btn" disabled={busy} onClick={subscribe}>Subscribe</button>}
+          </div>
+        ) : (
+          <>
+            <div className="psc-row">
+              <input value={targets} onChange={e => setTargets(e.target.value)} placeholder="topic" />
+              <input value={dName} onChange={e => setDName(e.target.value)} placeholder="subscriber name" title="Name of this subscriber. Messages it has not read wait for it under this name." />
+              {subs.length > 0
+                ? <button className="secondary-stop" disabled={busy} onClick={subKind === 'durable' ? pauseDurable : unsubscribe}>Pause</button>
+                : <button className="primary-run psc-btn" disabled={busy} onClick={subscribeDurable}>Start</button>}
+            </div>
+            <div className="psc-row">
+              <select value={dMode} onChange={e => setDMode(e.target.value as 'all' | 'one')} title="Who has to receive a message before it counts as delivered">
+                <option value="all">Every subscriber gets it</option>
+                <option value="one">Only one subscriber gets it</option>
+              </select>
+              <select value={dAck} onChange={e => setDAck(e.target.value as 'auto' | 'manual')} title="Auto confirms on arrival. Manual waits for your Ack button.">
+                <option value="auto">Auto acknowledge</option>
+                <option value="manual">Acknowledge by hand</option>
+              </select>
+              {dAck === 'manual' && <input className="psc-count" type="number" min={0} value={dRedeliver} onChange={e => setDRedeliver(Number(e.target.value))} title="Send again after this many seconds without an acknowledgement, 0 = never" />}
+            </div>
+          </>
+        )}
         <div className="psc-sub-state">
           {subs.length > 0 ? <>Listening on {subs.map(s => <code key={s}>{s}</code>)}</> : 'Not subscribed.'}
         </div>
         <div className="psc-feed-head">
           <span><b>{received.toLocaleString()}</b> received{avgLatency !== undefined && <> · avg latency <b>{avgLatency.toFixed(1)} ms</b></>}</span>
           <span>
+            {unackedCount > 0 && <button className="psc-link" onClick={() => ackIds(unacked)}>Ack all ({unackedCount})</button>}
             <button className="psc-link" onClick={() => { if (!paused) setFrozen(messages); setPaused(!paused) }}>{paused ? 'Resume' : 'Pause'}</button>
             <button className="psc-link" onClick={clearMessages}>Clear</button>
           </span>
@@ -355,9 +425,15 @@ function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, c
           {shownMessages.slice().reverse().map(m => (
             <div key={m.id} className="psc-msg">
               <time>{clock(m.ts)}</time>
-              <code>{m.pattern ? `${m.pattern} → ${m.channel}` : m.channel}</code>
+              <code>{m.pattern ? `${m.pattern} → ${m.channel}` : m.sid ? `${m.channel} · ${m.sid}` : m.channel}</code>
               <span className="psc-payload">{m.payload}</span>
-              <small>{m.latency !== undefined ? `${m.latency} ms · ` : ''}{m.bytes} B</small>
+              <small>
+                {m.redelivered && <em className="psc-badge warn">again</em>}
+                {m.sid && (acked[`${m.group}:${m.sid}`]
+                  ? <em className="psc-badge ok">acked</em>
+                  : <button className="psc-ack" onClick={() => ackIds([m])}>Ack</button>)}
+                {m.latency !== undefined ? `${m.latency} ms · ` : ''}{m.bytes} B
+              </small>
             </div>
           ))}
         </div>
@@ -391,6 +467,84 @@ function ConsoleWindow({ id, managed, conn, setConn, subs, messages, received, c
           ))}
         </div>
       </fieldset>
+    </div>
+  )
+}
+
+function Backlog({ conn, pushLog }: { conn: Record<WinId, Conn>; pushLog: (level: LogLine['level'], text: string) => void }) {
+  const api = window.snugBench.console
+  const [topic, setTopic] = useState('news')
+  const [auto, setAuto] = useState(true)
+  const [data, setData] = useState<DurableBacklog | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const via: WinId | null = conn.A === 'connected' ? 'A' : conn.B === 'connected' ? 'B' : null
+
+  async function refresh() {
+    if (!via || !topic.trim()) return
+    try {
+      setData(await api.durableBacklog(via, topic.trim()))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+    }
+  }
+
+  useEffect(() => {
+    void refresh()
+    if (!auto) return
+    const timer = setInterval(() => { void refresh() }, 1000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [via, topic, auto])
+
+  async function remove(group: string) {
+    if (!via) return
+    try {
+      await api.durableDestroyGroup(via, topic.trim(), group)
+      await refresh()
+    } catch (err) {
+      pushLog('error', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return (
+    <div className="psc-backlog">
+      <div className="psc-backlog-head">
+        <div>
+          <strong>Stored messages</strong>
+          <span>Messages kept on the server until every subscriber has acknowledged them.</span>
+        </div>
+        <div className="psc-log-tools">
+          <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="topic" />
+          <label className="psc-check"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} /> Live</label>
+          <button className="validation-copy" disabled={!via} onClick={() => void refresh()}>Refresh</button>
+        </div>
+      </div>
+      {!via && <div className="psc-empty">Connect a window to see stored messages.</div>}
+      {via && error && <div className="psc-line error"><span>{error}</span></div>}
+      {via && !error && data && (
+        <div className="psc-backlog-body">
+          <div className="psc-stat"><b>{data.stored.toLocaleString()}</b><span>waiting on {data.topic}</span></div>
+          {data.groups.length === 0 ? (
+            <p className="psc-empty">No subscriber has joined this topic yet. Messages wait until one does.</p>
+          ) : (
+            <table className="rpc-table">
+              <thead><tr><th>Subscriber group</th><th>Connected</th><th>Waiting for it</th><th>Read, not acknowledged</th><th /></tr></thead>
+              <tbody>
+                {data.groups.map(g => (
+                  <tr key={g.name}>
+                    <td>{g.name === 'shared' ? 'shared (one gets each)' : g.name.replace(/^sub:/, '')}</td>
+                    <td>{g.consumers}</td>
+                    <td>{g.lag === null ? '—' : g.lag.toLocaleString()}</td>
+                    <td>{g.pending.toLocaleString()}</td>
+                    <td><button className="psc-link" onClick={() => void remove(g.name)} title="Forget this subscriber. Messages it was holding back are released.">Remove</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   )
 }

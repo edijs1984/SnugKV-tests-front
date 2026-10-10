@@ -10,6 +10,8 @@ const { spawn } = require('node:child_process')
 const { join } = require('node:path')
 const { mkdirSync } = require('node:fs')
 
+const durable = require('./durable.cjs')
+
 const MANAGED = {
   snugA: { label: 'SnugKV A', port: 16391 },
   snugB: { label: 'SnugKV B', port: 16392 },
@@ -201,6 +203,7 @@ class Window {
 
   disconnect() {
     this.userClosed = true
+    this.durableStop(false)
     this.unsubscribe(true)
     if (this.cmd) { this.cmd.expectedClose = true; this.cmd.destroy() }
     this.cmd = null
@@ -226,6 +229,159 @@ class Window {
       })
       this.cmd.write(encode(args))
     })
+  }
+
+
+  // ---- durable delivery (Redis Streams, see durable.cjs) ----
+
+  // Adapter so durable.cjs helpers can run over this window's command connection.
+  cmdClient() {
+    const call = async args => {
+      const res = await this.command(args)
+      return res.error ? new durable.RespError(res.reply) : res.raw
+    }
+    const must = async args => {
+      const v = await call(args)
+      if (v instanceof durable.RespError) throw new Error(`${args[0]}: ${v.message}`)
+      return v
+    }
+    return { call, must }
+  }
+
+  async durablePublish(topic, message, count, maxlen) {
+    const total = Math.max(1, Math.min(100000, Math.round(Number(count) || 1)))
+    const key = durable.streamKey(topic)
+    const started = Date.now()
+    let sent = 0
+    let errors = 0
+    let firstError = null
+    let lastId = null
+    for (let i = 1; i <= total; i++) {
+      const body = String(message).replaceAll('{n}', String(i)).replaceAll('{ts}', String(Date.now()))
+      const args = ['XADD', key]
+      if (maxlen > 0) args.push('MAXLEN', '~', String(maxlen))
+      args.push('*', 'data', body)
+      try {
+        const res = await this.command(args)
+        if (res.error) { errors++; firstError = res.reply; break }
+        lastId = res.raw
+        sent++
+      } catch (error) { errors++; firstError = error.message; break }
+    }
+    let stored = null
+    try { stored = Number((await this.command(['XLEN', key])).raw) } catch { /* reported above if the server is down */ }
+    const result = { sent, receivers: sent, errors, firstError, ms: Date.now() - started, stored, lastId }
+    this.event('publish', { channel: topic, count: total, durable: true, ...result })
+    if (firstError) this.event('error', { message: `XADD ${key}: ${firstError}` })
+    return result
+  }
+
+  // Starts a consumer loop on its own connection. opts: { topic, mode: 'all'|'one', name, ack: 'auto'|'manual', redeliverMs }
+  async durableSubscribe(opts) {
+    if (!this.addr) throw new Error('connect first')
+    this.durableStop(false)
+    const topic = String(opts.topic).trim()
+    if (!topic) throw new Error('enter a topic')
+    const name = String(opts.name || this.id).trim() || this.id
+    const group = opts.mode === 'one' ? 'shared' : `sub:${name}`
+    const consumer = `${name}-${this.id}`
+    const key = durable.streamKey(topic)
+    const client = new durable.Client(this.addr)
+    await client.open()
+    const run = { client, running: true, topic, group, consumer, key }
+    this.dur = run
+    try {
+      const created = await client.call(['XGROUP', 'CREATE', key, group, '0', 'MKSTREAM'])
+      if (created instanceof durable.RespError && !/BUSYGROUP/.test(created.message)) throw new Error(`XGROUP CREATE: ${created.message}`)
+    } catch (error) {
+      client.close()
+      this.dur = null
+      this.event('error', { message: error.message })
+      throw error
+    }
+    this.event('sub', { state: 'subscribed', name: `${topic} (${opts.mode === 'one' ? 'shared group' : `own copy as ${name}`}, ${opts.ack} ack)`, count: 1 })
+    this.received = 0
+    this.consume(run, opts).catch(error => {
+      if (run.running) this.event('error', { message: `durable subscriber on ${topic}: ${error.message}` })
+    }).finally(() => {
+      if (this.dur === run) this.dur = null
+      this.event('sub', { state: 'closed', expected: !run.running, received: this.received })
+    })
+    return { group, consumer }
+  }
+
+  async consume(run, opts) {
+    const { client, key, group, consumer, topic } = run
+    const redeliverMs = Number(opts.redeliverMs) || 0
+    let lastClaim = Date.now()
+    const deliver = async (entries, redelivered) => {
+      const ids = []
+      for (const entry of entries || []) {
+        const id = String(entry[0])
+        const fields = durable.toMap(entry[1])
+        const payload = String(fields.data ?? '')
+        this.received++
+        this.event('message', { type: 'durable', channel: topic, id, group, payload, bytes: Buffer.byteLength(payload), redelivered })
+        ids.push(id)
+      }
+      if (ids.length && opts.ack === 'auto') {
+        await client.must(['XACK', key, group, ...ids])
+        this.event('durable-ack', { ids, group, topic })
+        const removed = await durable.finalize(client, topic)
+        if (removed) this.event('info', { message: `${removed} message${removed === 1 ? '' : 's'} on ${topic} fully delivered and removed` })
+      }
+    }
+    while (run.running) {
+      if (redeliverMs > 0 && Date.now() - lastClaim >= Math.max(500, redeliverMs / 2)) {
+        lastClaim = Date.now()
+        const claimed = await client.must(['XAUTOCLAIM', key, group, consumer, String(redeliverMs), '0-0', 'COUNT', '100'])
+        await deliver(Array.isArray(claimed) ? claimed[1] : [], true)
+      }
+      const reply = await client.must(['XREADGROUP', 'GROUP', group, consumer, 'COUNT', '100', 'BLOCK', '1000', 'STREAMS', key, '>'])
+      if (Array.isArray(reply) && reply.length) {
+        // RESP2: [[key, entries]]; RESP3: map flattened to [key, entries]
+        const first = reply[0]
+        const entries = Array.isArray(first) ? first[1] : reply[1]
+        await deliver(entries, false)
+      }
+    }
+  }
+
+  // Stops reading but keeps the group, so unread messages keep waiting for this subscriber.
+  durableStop(announce = true) {
+    const run = this.dur
+    if (!run) return false
+    run.running = false
+    run.client.close()
+    this.dur = null
+    if (announce) this.event('info', { message: `stopped reading ${run.topic}; unread messages wait for ${run.group}` })
+    return true
+  }
+
+  // Acknowledge messages by hand, then remove whatever every group has now acknowledged.
+  async durableAck(topic, group, ids) {
+    const key = durable.streamKey(topic)
+    const list = (Array.isArray(ids) ? ids : []).map(String)
+    if (!list.length) return { acked: 0, removed: 0 }
+    const client = this.cmdClient()
+    const acked = Number(await client.must(['XACK', key, group, ...list])) || 0
+    this.event('durable-ack', { ids: list, group, topic })
+    const removed = await durable.finalize(client, topic)
+    if (removed) this.event('info', { message: `${removed} message${removed === 1 ? '' : 's'} on ${topic} fully delivered and removed` })
+    return { acked, removed }
+  }
+
+  async durableBacklog(topic) {
+    return durable.backlog(this.cmdClient(), String(topic))
+  }
+
+  // Removes a subscriber's group, which releases the messages it was holding back.
+  async durableDestroyGroup(topic, group) {
+    const client = this.cmdClient()
+    await client.must(['XGROUP', 'DESTROY', durable.streamKey(topic), group])
+    const removed = await durable.finalize(client, topic)
+    this.event('info', { message: `removed group ${group} on ${topic}${removed ? `; ${removed} message${removed === 1 ? '' : 's'} released` : ''}` })
+    return { removed }
   }
 
   // Opens a dedicated subscriber connection.

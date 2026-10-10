@@ -45,6 +45,12 @@ contextBridge.exposeInMainWorld('snugBench', {
     publish: (id, channel, message, count) => ipcRenderer.invoke('console:publish', id, channel, message, count),
     subscribe: (id, kind, targets) => ipcRenderer.invoke('console:subscribe', id, kind, targets),
     unsubscribe: id => ipcRenderer.invoke('console:unsubscribe', id),
+    durablePublish: (id, topic, message, count, maxlen) => ipcRenderer.invoke('console:durable:publish', id, topic, message, count, maxlen),
+    durableSubscribe: (id, opts) => ipcRenderer.invoke('console:durable:subscribe', id, opts),
+    durableStop: id => ipcRenderer.invoke('console:durable:stop', id),
+    durableAck: (id, topic, group, ids) => ipcRenderer.invoke('console:durable:ack', id, topic, group, ids),
+    durableBacklog: (id, topic) => ipcRenderer.invoke('console:durable:backlog', id, topic),
+    durableDestroyGroup: (id, topic, group) => ipcRenderer.invoke('console:durable:destroy', id, topic, group),
     onEvent: callback => {
       const listener = (_event, data) => callback(data)
       ipcRenderer.on('console:event', listener)
