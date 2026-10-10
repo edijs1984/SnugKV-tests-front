@@ -36,6 +36,21 @@ contextBridge.exposeInMainWorld('snugBench', {
     ipcRenderer.on('validation:update', listener)
     return () => ipcRenderer.removeListener('validation:update', listener)
   },
+  console: {
+    startServers: opts => ipcRenderer.invoke('console:servers:start', opts),
+    stopServers: () => ipcRenderer.invoke('console:servers:stop'),
+    connect: (id, addr) => ipcRenderer.invoke('console:connect', id, addr),
+    disconnect: id => ipcRenderer.invoke('console:disconnect', id),
+    run: (id, line) => ipcRenderer.invoke('console:run', id, line),
+    publish: (id, channel, message, count) => ipcRenderer.invoke('console:publish', id, channel, message, count),
+    subscribe: (id, kind, targets) => ipcRenderer.invoke('console:subscribe', id, kind, targets),
+    unsubscribe: id => ipcRenderer.invoke('console:unsubscribe', id),
+    onEvent: callback => {
+      const listener = (_event, data) => callback(data)
+      ipcRenderer.on('console:event', listener)
+      return () => ipcRenderer.removeListener('console:event', listener)
+    },
+  },
   startPubSubLab: config => ipcRenderer.invoke('pubsub:start', config),
   cancelPubSubLab: () => ipcRenderer.invoke('pubsub:cancel'),
   onPubSubUpdate: callback => {

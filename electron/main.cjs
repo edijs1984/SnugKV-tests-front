@@ -2140,6 +2140,38 @@ ipcMain.handle('pubsub:cancel', async () => {
   return true
 })
 
+// ---- Pub/Sub live console ----
+// Two client "windows" (A and B) plus optional managed test servers, see
+// electron/pubsubConsole.cjs. Events stream to the renderer as they happen.
+let pubSubConsole = null
+function getPubSubConsole() {
+  if (!pubSubConsole) {
+    const { Console } = require('./pubsubConsole.cjs')
+    pubSubConsole = new Console(event => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('console:event', event)
+    })
+  }
+  return pubSubConsole
+}
+
+ipcMain.handle('console:servers:start', async (_event, opts = {}) => {
+  if (activeRpc || activePubSub || activeChild || activeValidation) throw new Error('Another run is in progress')
+  return getPubSubConsole().startServers(opts, {
+    repo: snugRepo(),
+    go: goPath(),
+    env: runtimeEnv(),
+    binDir: join(app.getPath('userData'), 'bin'),
+    redisServer: redisServerPath(),
+  })
+})
+ipcMain.handle('console:servers:stop', async () => { await getPubSubConsole().stopServers(); return true })
+ipcMain.handle('console:connect', async (_event, id, addr) => { await getPubSubConsole().win(id).connect(addr); return true })
+ipcMain.handle('console:disconnect', async (_event, id) => { getPubSubConsole().win(id).disconnect(); return true })
+ipcMain.handle('console:run', async (_event, id, line) => getPubSubConsole().runLine(id, line))
+ipcMain.handle('console:publish', async (_event, id, channel, message, count) => getPubSubConsole().publish(id, String(channel), String(message), count))
+ipcMain.handle('console:subscribe', async (_event, id, kind, targets) => { await getPubSubConsole().win(id).subscribe(kind, Array.isArray(targets) ? targets.map(String) : []); return true })
+ipcMain.handle('console:unsubscribe', async (_event, id) => { getPubSubConsole().win(id).unsubscribe(); return true })
+
 ipcMain.handle('bench:environment', () => ({
   snugkvRepo: snugRepo(),
   script: scriptPath(),
@@ -2478,6 +2510,7 @@ app.on('before-quit', () => {
     activePubSub.cancelled = true
     activePubSub.stop?.()
   }
+  if (pubSubConsole) pubSubConsole.closeAll()
   if (activeChild) activeChild.kill('SIGTERM')
   if (activeValidation) stopProcessTree(activeValidation)
   if (activeServer?.child) activeServer.child.kill('SIGTERM')

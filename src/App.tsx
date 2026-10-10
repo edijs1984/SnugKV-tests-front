@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
 import ValidationLab from './ValidationLab'
 import RpcLab from './RpcLab'
-import PubSubLab from './PubSubLab'
+import PubSubTab from './PubSubTab'
 import DatabaseBrowser from './DatabaseBrowser'
 import BenchmarkMatrix from './BenchmarkMatrix'
 import PipelineSweep from './PipelineSweep'
@@ -697,7 +697,7 @@ function App() {
       ) : activeTab === 'rpc' ? (
         <RpcLab />
       ) : activeTab === 'pubsub' ? (
-        <PubSubLab />
+        <PubSubTab />
       ) : (
         <ValidationLab />
       )}
