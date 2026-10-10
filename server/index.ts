@@ -31,6 +31,7 @@ type Job = {
 const profiles = new Set([
   'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
   'text', 'repetitive', 'compressed', 'random',
+  'eth-hash', 'eth-address', 'sol-pubkey', 'sol-signature', 'uint256',
 ])
 
 const app = express()

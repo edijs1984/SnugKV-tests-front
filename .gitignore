@@ -3,3 +3,4 @@ dist/
 runs/
 .env
 .DS_Store
+*.tsbuildinfo
