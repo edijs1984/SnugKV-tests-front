@@ -341,3 +341,79 @@ export type DbPipelineResult = {
   firstError: string | null
   elapsedMs: number
 }
+
+export type RpcChain = 'solana' | 'evm'
+export type RpcCacheKind = 'snug' | 'redis'
+
+export type RpcLabConfig = {
+  chain: RpcChain
+  caches: RpcCacheKind[]
+  users: number
+  durationSeconds: number
+  refreshMs: number
+  watched: number
+  popular: number
+  popularReads: number
+  overlap: number
+  skew: number
+  /** Proxy TTL for state, recent and tip reads. 0 keeps the proxy defaults. */
+  cacheTtlSeconds: number
+  /** Block or slot time of the fake node. 0 keeps the chain default. */
+  blockTimeMs: number
+  /** Seconds to wait before the final memory reading (SnugKV optimizer). */
+  settleSeconds: number
+  checkRate: number
+  seed: number
+}
+
+export type RpcMethodTally = {
+  calls: number
+  hit: number
+  miss: number
+  coalesced: number
+  bypass: number
+  answered_without_node: number
+}
+
+export type RpcWalletResult = {
+  chain: RpcChain
+  users: number
+  seconds: number
+  http_requests: number
+  rpc_calls: number
+  failures: number
+  first_failure_status?: number
+  calls_per_sec: number
+  p50_ms: number
+  p99_ms: number
+  answered_without_node: number
+  node_calls_from_proxy?: number
+  node_calls_saved?: number
+  methods: Record<string, RpcMethodTally>
+  staleness?: {
+    checked: number
+    stale: number
+    stale_share?: number
+    lag_slots_p50?: number
+    lag_slots_p99?: number
+    lag_slots_max?: number
+  }
+  cache_peak_entries?: number
+  cache_peak_bytes?: number
+  cache_bytes_per_entry_at_peak?: number
+  cache_bytes_after_wait?: number
+  cache_entries_after_wait?: number
+}
+
+export type RpcLabJob = {
+  id: string
+  status: 'running' | 'done' | 'failed' | 'cancelled'
+  stage: string
+  config: RpcLabConfig
+  results: { cache: RpcCacheKind; label: string; result: RpcWalletResult }[]
+  log: string
+  commands: string[]
+  startedAt: string
+  finishedAt?: string
+  error?: string
+}

@@ -18,6 +18,7 @@ The app can start native Redis or adaptive SnugKV locally and uses the same Snug
 - Cancel running benchmark.
 - Shows the equivalent CLI command.
 - Dedicated **Tests & Soak** tab with live validation output.
+- **RPC cache** tab: runs SnugKV's `rpccache` proxy and a wallet-style simulation against SnugKV and Redis as the cache, for Solana or EVM traffic, and shows the two side by side (calls answered without the node, latency, stale answers, cache memory). It uses a fake node and private ports 16379, 16383, 19100 and 18899, so it does not touch the servers on the Benchmark tab. Needs the SnugKV checkout from the `rpcbench wallets` change (PR 329 or later) and `redis-server` on the PATH.
 - One-click release suites: full Go tests, race detector, vet, RESP fuzz, Redis 8.2 differential gates, durability gates, and cluster recovery.
 - Focused chaos suites for corrupted-replica and persistence-failure recovery.
 - Configurable mixed workload soak, distributed chaos soak, and combined Full Soak presets.
