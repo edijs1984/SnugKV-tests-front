@@ -20,6 +20,8 @@ const profiles = [
   ['sol-pubkey', 'Solana public key · base58'],
   ['sol-signature', 'Solana signature · base58'],
   ['uint256', 'uint256 balance · decimal'],
+  ['sol-token-account', 'Solana token account · 165 B binary'],
+  ['sol-token-account-b64', 'Solana token account · base64 (220 chars)'],
   ['hash-small', 'Hash · 10 fields/key · 64 B values'],
   ['hash-medium', 'Hash · 100 fields/key · 64 B values'],
   ['hash-large', 'Hash · 1000 fields/key · 64 B values'],
