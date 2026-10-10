@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult, RpcLabConfig, RpcLabJob, PubSubLabConfig, PubSubLabJob } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult, RpcLabConfig, RpcLabJob, PubSubLabConfig, PubSubLabJob, ConsoleEvent, ConsoleRunResult, ConsolePublishResult, ConsoleServerOptions } from './types'
 
 export {}
 
@@ -23,6 +23,17 @@ declare global {
       startValidation(suiteId: ValidationSuiteId, options: ValidationOptions): Promise<ValidationJob>
       cancelValidation(): Promise<boolean>
       onValidationUpdate(callback: (job: ValidationJob) => void): () => void
+      console: {
+        startServers(opts: ConsoleServerOptions): Promise<Record<string, string>>
+        stopServers(): Promise<boolean>
+        connect(id: string, addr: string): Promise<boolean>
+        disconnect(id: string): Promise<boolean>
+        run(id: string, line: string): Promise<ConsoleRunResult>
+        publish(id: string, channel: string, message: string, count: number): Promise<ConsolePublishResult>
+        subscribe(id: string, kind: 'channel' | 'pattern' | 'shard', targets: string[]): Promise<boolean>
+        unsubscribe(id: string): Promise<boolean>
+        onEvent(callback: (event: ConsoleEvent) => void): () => void
+      }
       startPubSubLab(config: PubSubLabConfig): Promise<PubSubLabJob>
       cancelPubSubLab(): Promise<boolean>
       onPubSubUpdate(callback: (job: PubSubLabJob) => void): () => void

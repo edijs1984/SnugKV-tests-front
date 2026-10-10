@@ -480,3 +480,40 @@ export type PubSubLabJob = {
   finishedAt?: string
   error?: string
 }
+
+export type ConsoleEvent = {
+  window: 'A' | 'B' | '*'
+  ts: number
+  kind: 'status' | 'sub' | 'message' | 'publish' | 'error' | 'info'
+  state?: string
+  addr?: string
+  expected?: boolean
+  name?: string
+  count?: number
+  message?: string
+  type?: string
+  channel?: string
+  pattern?: string
+  payload?: string
+  bytes?: number
+  received?: number
+  sent?: number
+  receivers?: number
+  errors?: number
+  firstError?: string | null
+  ms?: number
+}
+
+export type ConsoleRunResult = { reply: string; error: boolean; ms: number }
+export type ConsolePublishResult = { sent: number; receivers: number; errors: number; firstError: string | null; ms: number }
+
+export type ConsoleServerOptions = {
+  snugA: boolean
+  snugB: boolean
+  redis: boolean
+  /** Make SnugKV B a replica of SnugKV A. */
+  replica: boolean
+  sendAttempts: number
+  sendTimeoutMs: number
+  queueSize: number
+}
