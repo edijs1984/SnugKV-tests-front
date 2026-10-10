@@ -22,6 +22,8 @@ const profiles = [
   ['uint256', 'uint256 balance · decimal'],
   ['sol-token-account', 'Solana token account · 165 B binary'],
   ['sol-token-account-b64', 'Solana token account · base64 (220 chars)'],
+  ['hex-key', 'Hash keys · 64 hex chars as the key'],
+  ['address-key', 'Address keys · 0x + 40 hex, mixed case'],
   ['hash-small', 'Hash · 10 fields/key · 64 B values'],
   ['hash-medium', 'Hash · 100 fields/key · 64 B values'],
   ['hash-large', 'Hash · 1000 fields/key · 64 B values'],

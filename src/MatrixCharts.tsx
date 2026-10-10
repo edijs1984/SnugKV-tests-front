@@ -69,6 +69,8 @@ function familyLabel(id: string) {
     uint256: 'uint256 balance',
     'sol-token-account': 'Solana token account',
     'sol-token-account-b64': 'Solana token account (base64)',
+    'hex-key': 'Hash keys (64 hex)',
+    'address-key': 'Address keys (0x + 40 hex)',
     hash: 'Hash',
     list: 'List',
     set: 'Set',
