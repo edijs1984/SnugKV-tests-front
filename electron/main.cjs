@@ -24,6 +24,7 @@ let activeValidation = null
 let activeValidationCancelled = false
 let activeServer = null
 let activeRpc = null
+let activePubSub = null
 
 
 const validationSuites = [
@@ -2047,6 +2048,7 @@ function emitRpc(job) {
 
 ipcMain.handle('rpc:start', async (_event, request = {}) => {
   if (activeRpc) throw new Error('An RPC cache run is already in progress')
+  if (activePubSub) throw new Error('Cannot start an RPC cache run while a Pub/Sub run is in progress')
   if (activeChild) throw new Error('Cannot start an RPC cache run while a benchmark is running')
   if (activeValidation) throw new Error('Cannot start an RPC cache run while validation is running')
 
@@ -2084,6 +2086,57 @@ ipcMain.handle('rpc:cancel', async () => {
   if (!activeRpc) return false
   activeRpc.cancelled = true
   await activeRpc.stop?.()
+  return true
+})
+
+// ---- Pub/Sub lab ----
+// Runs pubsubbench against SnugKV and Redis on private loopback ports (see
+// electron/pubsubLab.cjs). It never touches the servers managed by the
+// Benchmark tab.
+function emitPubSub(job) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('pubsub:update', job)
+}
+
+ipcMain.handle('pubsub:start', async (_event, request = {}) => {
+  if (activePubSub) throw new Error('A Pub/Sub run is already in progress')
+  if (activeRpc) throw new Error('Cannot start a Pub/Sub run while an RPC cache run is in progress')
+  if (activeChild) throw new Error('Cannot start a Pub/Sub run while a benchmark is running')
+  if (activeValidation) throw new Error('Cannot start a Pub/Sub run while validation is running')
+
+  const { runPubSubLab, sanitizePubSubConfig } = require('./pubsubLab.cjs')
+  const config = sanitizePubSubConfig(request)
+  const state = { cancelled: false, stop: null }
+  const base = { id: randomUUID(), status: 'running', startedAt: new Date().toISOString() }
+  activePubSub = state
+
+  const ctx = {
+    repo: snugRepo(),
+    go: goPath(),
+    env: runtimeEnv(),
+    binDir: join(app.getPath('userData'), 'bin'),
+    redisServer: redisServerPath(),
+    isCancelled: () => state.cancelled,
+    registerStop: fn => { state.stop = fn },
+    emit: job => emitPubSub({ ...base, ...job, status: 'running' }),
+  }
+
+  const first = { ...base, config, results: [], log: '', stage: 'Preparing', commands: [] }
+  runPubSubLab(config, ctx)
+    .then(job => emitPubSub({ ...base, ...job, finishedAt: new Date().toISOString() }))
+    .catch(error => emitPubSub({
+      ...first,
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      finishedAt: new Date().toISOString(),
+    }))
+    .finally(() => { if (activePubSub === state) activePubSub = null })
+  return first
+})
+
+ipcMain.handle('pubsub:cancel', async () => {
+  if (!activePubSub) return false
+  activePubSub.cancelled = true
+  await activePubSub.stop?.()
   return true
 })
 
@@ -2420,6 +2473,10 @@ app.on('before-quit', () => {
   if (activeRpc) {
     activeRpc.cancelled = true
     activeRpc.stop?.()
+  }
+  if (activePubSub) {
+    activePubSub.cancelled = true
+    activePubSub.stop?.()
   }
   if (activeChild) activeChild.kill('SIGTERM')
   if (activeValidation) stopProcessTree(activeValidation)
