@@ -65,7 +65,7 @@ function mib(bytes: number | undefined) {
 type Row = {
   label: string
   hint?: string
-  value: (r: RpcWalletResult) => number | undefined
+  value: (r: RpcWalletResult, p?: Record<string, number>) => number | undefined
   format: (v: number | undefined) => string
   /** Which direction is better, to colour the difference. */
   better?: 'lower' | 'higher'
@@ -81,6 +81,8 @@ const rows: Row[] = [
   { label: 'Cache memory at peak', value: r => r.cache_peak_bytes, format: mib, better: 'lower' },
   { label: 'Bytes per entry at peak', value: r => r.cache_bytes_per_entry_at_peak, format: v => (v === undefined ? '—' : `${num(v)} B`), better: 'lower' },
   { label: 'Cache memory after settling', hint: 'after SnugKV\'s optimizer had time to run', value: r => r.cache_bytes_after_wait, format: mib, better: 'lower' },
+  { label: 'Cache errors', hint: 'cache calls the proxy gave up on and sent to the node instead', value: (_r, p) => p?.cache_errors, format: v => num(v), better: 'lower' },
+  { label: 'Cache pool busy', hint: 'calls that found every cache connection in use', value: (_r, p) => p?.cache_busy, format: v => num(v), better: 'lower' },
 ]
 
 export default function RpcLab() {
@@ -133,7 +135,7 @@ export default function RpcLab() {
   }
 
   const results = job?.results ?? []
-  const byKind = (kind: RpcCacheKind) => results.find(item => item.cache === kind)?.result
+  const byKind = (kind: RpcCacheKind) => results.find(item => item.cache === kind)
   const snug = byKind('snug')
   const redis = byKind('redis')
   const methods = useMemo(() => {
@@ -272,8 +274,8 @@ export default function RpcLab() {
               </thead>
               <tbody>
                 {rows.map(row => {
-                  const a = snug ? row.value(snug) : undefined
-                  const b = redis ? row.value(redis) : undefined
+                  const a = snug ? row.value(snug.result, snug.proxy) : undefined
+                  const b = redis ? row.value(redis.result, redis.proxy) : undefined
                   let diff = ''
                   let tone = ''
                   if (snug && redis && a !== undefined && b !== undefined && b !== 0) {
@@ -287,13 +289,18 @@ export default function RpcLab() {
                   return (
                     <tr key={row.label}>
                       <td>{row.label}{row.hint && <small>{row.hint}</small>}</td>
-                      {results.map(item => <td key={item.cache}>{row.format(row.value(item.result))}</td>)}
+                      {results.map(item => <td key={item.cache}>{row.format(row.value(item.result, item.proxy))}</td>)}
                       {snug && redis && <td className={`rpc-diff ${tone}`}>{diff || '—'}</td>}
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+            {results.some(item => (item.proxy?.cache_errors ?? 0) > 0) && (
+              <p className="rpc-note">
+                The proxy gave up on some cache calls and asked the node instead, so these caches did not see equal traffic. Compare hit rates with care.
+              </p>
+            )}
             {tooFew && (
               <p className="rpc-note">
                 Fewer than {MIN_ENTRIES_FOR_MEMORY.toLocaleString()} cached entries at the peak. A server's fixed overhead dominates bytes per entry at that size, so do not compare memory from this run. The Cache memory preset holds enough entries.

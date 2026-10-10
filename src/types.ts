@@ -410,7 +410,7 @@ export type RpcLabJob = {
   status: 'running' | 'done' | 'failed' | 'cancelled'
   stage: string
   config: RpcLabConfig
-  results: { cache: RpcCacheKind; label: string; result: RpcWalletResult }[]
+  results: { cache: RpcCacheKind; label: string; result: RpcWalletResult; proxy?: Record<string, number> }[]
   log: string
   commands: string[]
   startedAt: string

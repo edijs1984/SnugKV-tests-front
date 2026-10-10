@@ -8,6 +8,7 @@
 
 const { spawn } = require('node:child_process')
 const net = require('node:net')
+const http = require('node:http')
 const { join } = require('node:path')
 const { mkdirSync } = require('node:fs')
 
@@ -108,6 +109,26 @@ function waitForPort(port, child, logs, timeoutMs = 15000) {
       socket.once('timeout', fail)
     }
     attempt()
+  })
+}
+
+// Reads the proxy's /metrics into { name: number } for the plain counters.
+function fetchMetrics(port) {
+  return new Promise(resolve => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/metrics', timeout: 2000 }, res => {
+      let body = ''
+      res.on('data', chunk => { body += chunk })
+      res.on('end', () => {
+        const out = {}
+        for (const line of body.split('\n')) {
+          const match = /^(rpccache_[a-z_]+) (\d+)$/.exec(line.trim())
+          if (match) out[match[1].replace(/^rpccache_/, '').replace(/_total$/, '')] = Number(match[2])
+        }
+        resolve(out)
+      })
+    })
+    req.on('timeout', () => { req.destroy(); resolve({}) })
+    req.on('error', () => resolve({}))
   })
 }
 
@@ -230,6 +251,9 @@ async function runRpcLab(rawConfig, ctx) {
         captureStdout: chunk => { stdout += chunk.toString() },
       })
       const code = await new Promise(resolve => run.child.once('close', resolve))
+      // The proxy's own counters say whether the cache answered in time; a cache
+      // that times out is skipped and its misses go to the node.
+      const proxyMetrics = await fetchMetrics(PORTS.proxy)
       await stopAll()
       if (ctx.isCancelled()) break
       if (code !== 0) throw new Error(`rpcbench wallets exited with code ${code}\n${run.logs.join('').trim()}`)
@@ -240,7 +264,7 @@ async function runRpcLab(rawConfig, ctx) {
       } catch {
         throw new Error(`could not read rpcbench output:\n${stdout.slice(0, 2000)}`)
       }
-      job.results = [...job.results, { cache: kind, label, result }]
+      job.results = [...job.results, { cache: kind, label, result, proxy: proxyMetrics }]
       push(`${label}: ${result.rpc_calls} calls, ${(result.answered_without_node * 100).toFixed(1)}% answered without the node\n`)
     }
     job.status = ctx.isCancelled() ? 'cancelled' : 'done'
