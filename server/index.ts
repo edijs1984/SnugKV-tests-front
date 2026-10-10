@@ -32,6 +32,7 @@ const profiles = new Set([
   'session-json', 'api-json', 'cache-json', 'counter', 'uuid',
   'text', 'repetitive', 'compressed', 'random',
   'eth-hash', 'eth-address', 'sol-pubkey', 'sol-signature', 'uint256',
+  'sol-token-account', 'sol-token-account-b64',
 ])
 
 const app = express()
