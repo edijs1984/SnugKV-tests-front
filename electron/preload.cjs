@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('snugBench', {
   start: config => ipcRenderer.invoke('bench:start', config),
   cancel: () => ipcRenderer.invoke('bench:cancel'),
   save: payload => ipcRenderer.invoke('bench:save', payload),
+  saveText: payload => ipcRenderer.invoke('bench:save-text', payload),
   onUpdate: callback => {
     const listener = (_event, job) => callback(job)
     ipcRenderer.on('bench:update', listener)
@@ -20,11 +21,32 @@ contextBridge.exposeInMainWorld('snugBench', {
     return () => ipcRenderer.removeListener('server:update', listener)
   },
   bestResults: profile => ipcRenderer.invoke('history:get', profile),
-  allBestResults: () => ipcRenderer.invoke('history:get-all'),
   resetBestResults: profile => ipcRenderer.invoke('history:reset', profile),
+  resetAllStatistics: () => ipcRenderer.invoke('history:reset-all'),
   onHistoryUpdate: callback => {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('history:update', listener)
     return () => ipcRenderer.removeListener('history:update', listener)
   },
+  validationSuites: () => ipcRenderer.invoke('validation:suites'),
+  startValidation: (suiteId, options) => ipcRenderer.invoke('validation:start', { suiteId, options }),
+  cancelValidation: () => ipcRenderer.invoke('validation:cancel'),
+  onValidationUpdate: callback => {
+    const listener = (_event, job) => callback(job)
+    ipcRenderer.on('validation:update', listener)
+    return () => ipcRenderer.removeListener('validation:update', listener)
+  },
+  dbListKeys: options => ipcRenderer.invoke('db:list-keys', options),
+  dbGetKey: options => ipcRenderer.invoke('db:get-key', options),
+  dbSetString: options => ipcRenderer.invoke('db:set-string', options),
+  dbSetTtl: options => ipcRenderer.invoke('db:set-ttl', options),
+  dbDeleteKey: options => ipcRenderer.invoke('db:delete-key', options),
+  dbCreateExample: options => ipcRenderer.invoke('db:create-example', options),
+  dbMutate: request => ipcRenderer.invoke('db:mutate', request),
+  dbBulk: request => ipcRenderer.invoke('db:bulk', request),
+  dbCommand: request => ipcRenderer.invoke('db:command', request),
+  dbOverview: () => ipcRenderer.invoke('db:overview'),
+  dbScan: options => ipcRenderer.invoke('db:scan', options),
+  dbPipeline: request => ipcRenderer.invoke('db:pipeline', request),
+  dbFlush: () => ipcRenderer.invoke('db:flush'),
 })

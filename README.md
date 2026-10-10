@@ -2,12 +2,12 @@
 
 Desktop Electron + React UI for SnugKV's published Redis-compatible benchmark profiles.
 
-The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containers. Start the target server yourself and point the app at its host and port. Electron invokes the same `scripts/bench/bench-one.sh` used by the CLI, so desktop and terminal results remain comparable.
+The app can start native Redis or adaptive SnugKV locally and uses the same SnugKV benchmark and validation scripts as the CLI, so desktop and terminal results remain comparable.
 
 ## Features
 
 - Native Electron desktop app.
-- One-click local server controls for Redis, SnugKV raw, and SnugKV optimized.
+- One-click native local server controls for Redis and adaptive SnugKV.
 - React/Vite renderer.
 - Test profiles: cached JSON, session JSON, API JSON, counter, UUID, text, compressible, already-compressed, random.
 - Editable host, port, result label, key count, GET operations, workers, pipeline, settle time, and seed.
@@ -17,7 +17,12 @@ The app does **not** start or stop Redis, SnugKV, Valkey, Dragonfly, or containe
 - Native Save dialog for result JSON.
 - Cancel running benchmark.
 - Shows the equivalent CLI command.
-- No Docker or database lifecycle management.
+- Dedicated **Tests & Soak** tab with live validation output.
+- One-click release suites: full Go tests, race detector, vet, RESP fuzz, Redis 8.2 differential gates, durability gates, and cluster recovery.
+- Focused chaos suites for corrupted-replica and persistence-failure recovery.
+- Configurable mixed workload soak, distributed chaos soak, and combined Full Soak presets.
+- Validation cancellation terminates the spawned process group to avoid orphan test nodes.
+- Validation commands are allow-listed in the Electron main process; the renderer cannot execute arbitrary shell commands.
 
 > **Warning:** the benchmark runs `FLUSHDB` on the selected target.
 
@@ -76,6 +81,43 @@ cmd/rediswirebench
 
 Set `SNUGKV_REPO` when launching the app if that checkout is not next to the application project.
 
+
+## Tests & Soak tab
+
+The desktop app can run SnugKV's retained validation directly from the local
+SnugKV checkout. Open **Tests & Soak** and choose a suite.
+
+Release/correctness suites include:
+
+- Full Release Validation
+- Go Test
+- Race Detector
+- Go Vet
+- RESP Fuzz
+- Redis 8.2 Differential
+- Durability Matrix
+- Cluster Recovery Matrix
+- Corrupt Replica Recovery
+- Persistence Failure Recovery
+
+Long-running suites include:
+
+- Full Soak
+- Distributed Chaos Soak
+- Mixed Workload Soak
+
+Soak suites expose duration, case timeout, key count, worker count, value size,
+and seed controls. The runner streams stdout/stderr into the desktop console and
+supports cancellation.
+
+Some validation suites start local Redis/SnugKV instances, use isolated local
+ports, and intentionally exercise restart, corruption, persistence failure, and
+`FLUSHDB` behavior. Do not run them against production data.
+
+The Validation Lab uses the SnugKV checkout resolved by `SNUGKV_REPO` (or the
+same automatic `../SnugKV` lookup used by the benchmark tab), so the available
+test scripts are always the scripts from that local checkout.
+
 ## CLI parity
 
 For UUID against Redis on port 6390, the UI executes the equivalent of:
@@ -122,12 +164,30 @@ The renderer has no Node integration. Shell execution stays in the Electron main
 
 ## One-click local servers
 
-The desktop app includes three buttons:
+The desktop app includes two local server buttons:
 
 - Redis on `127.0.0.1:6390`
-- SnugKV raw on `127.0.0.1:6382`
-- SnugKV optimized on `127.0.0.1:6383`
+- adaptive SnugKV on `127.0.0.1:6383`
 
-On Linux, starting one first clears listeners on all three benchmark ports, then starts the selected server and waits until its TCP port is ready. SnugKV is rebuilt from the current checkout before raw/optimized launch, so the desktop benchmark uses current source code.
+On Linux, starting one first clears listeners on both benchmark ports, then starts the selected native server and waits until its TCP port is ready. SnugKV is rebuilt from the current checkout before launch. Encoding, compression, JSON-shape optimization, and terminal RAW storage are selected automatically per value inside SnugKV rather than through separate raw/optimized product modes.
 
 Redis requires `redis-server` to be installed and available on `PATH`. SnugKV requires Go to be installed.
+
+
+## Database Explorer
+
+The desktop app also includes a **Database** workspace for visually exploring a running local Redis or SnugKV instance.
+
+It is designed for users who do not know Redis commands:
+
+- search/browse keys by pattern
+- see data type, TTL, size and encoding metadata
+- inspect strings, hashes, lists, sets, sorted sets and JSON
+- edit string values visually
+- apply/remove TTL without writing commands
+- delete keys with confirmation
+- create realistic example data for each major data type
+- see the equivalent `redis-cli` command for every operation
+- learn which data type fits a given use case
+
+Start Redis or SnugKV from the **Benchmark** workspace, then switch to **Database**.
