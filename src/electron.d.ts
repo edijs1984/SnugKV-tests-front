@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult, RpcLabConfig, RpcLabJob, PubSubLabConfig, PubSubLabJob, ConsoleEvent, ConsoleRunResult, ConsolePublishResult, ConsoleServerOptions } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult, RpcLabConfig, RpcLabJob, PubSubLabConfig, PubSubLabJob, ConsoleEvent, ConsoleRunResult, ConsolePublishResult, ConsoleServerOptions, DurableOptions, DurableBacklog } from './types'
 
 export {}
 
@@ -32,6 +32,12 @@ declare global {
         publish(id: string, channel: string, message: string, count: number): Promise<ConsolePublishResult>
         subscribe(id: string, kind: 'channel' | 'pattern' | 'shard', targets: string[]): Promise<boolean>
         unsubscribe(id: string): Promise<boolean>
+        durablePublish(id: string, topic: string, message: string, count: number, maxlen: number): Promise<ConsolePublishResult & { stored: number | null }>
+        durableSubscribe(id: string, opts: DurableOptions): Promise<{ group: string; consumer: string }>
+        durableStop(id: string): Promise<boolean>
+        durableAck(id: string, topic: string, group: string, ids: string[]): Promise<{ acked: number; removed: number }>
+        durableBacklog(id: string, topic: string): Promise<DurableBacklog>
+        durableDestroyGroup(id: string, topic: string, group: string): Promise<{ removed: number }>
         onEvent(callback: (event: ConsoleEvent) => void): () => void
       }
       startPubSubLab(config: PubSubLabConfig): Promise<PubSubLabJob>

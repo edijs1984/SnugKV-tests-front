@@ -2375,3 +2375,21 @@ button.psc-chip:hover { border-color: #ff7a1a; color: #ffb06e; }
 .psc-switch { flex: 0 0 auto; align-self: flex-start; }
 .psc-view { flex: 1 1 auto; min-width: 0; }
 .psc-view > .validation-lab { min-height: 0; }
+.psc-seg { display: inline-flex; margin-top: 12px; border: 1px solid #2b3138; border-radius: 6px; overflow: hidden; }
+.psc-seg button { padding: 6px 12px; border: 0; background: #12161b; color: #929ca7; font-size: 12px; }
+.psc-seg button + button { border-left: 1px solid #2b3138; }
+.psc-seg button.active { background: rgba(255, 122, 26, .12); color: #ffb06e; }
+.psc-badge { margin-right: 8px; padding: 1px 6px; border-radius: 999px; font-style: normal; font-size: 10px; }
+.psc-badge.ok { background: rgba(91, 201, 110, .14); color: #7fd48f; }
+.psc-badge.warn { background: rgba(255, 176, 110, .14); color: #ffb06e; }
+.psc-ack { margin-right: 8px; padding: 1px 8px; border: 1px solid #ff7a1a; border-radius: 4px; background: transparent; color: #ffb06e; font-size: 11px; }
+.psc-backlog { margin-top: 18px; border: 1px solid #252a30; border-radius: 8px; background: #11151a; }
+.psc-backlog-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid #252a30; }
+.psc-backlog-head strong { display: block; }
+.psc-backlog-head span { color: #7e8791; font-size: 12px; }
+.psc-backlog-head input:not([type=checkbox]) { width: 160px; }
+.psc-backlog-body { padding: 12px 16px 16px; }
+.psc-stat { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.psc-stat b { font-size: 28px; font-variant-numeric: tabular-nums; }
+.psc-stat span { color: #929ca7; font-size: 12px; }
+.psc-backlog .psc-empty { padding: 12px 16px; }

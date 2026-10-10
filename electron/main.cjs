@@ -2170,6 +2170,12 @@ ipcMain.handle('console:disconnect', async (_event, id) => { getPubSubConsole().
 ipcMain.handle('console:run', async (_event, id, line) => getPubSubConsole().runLine(id, line))
 ipcMain.handle('console:publish', async (_event, id, channel, message, count) => getPubSubConsole().publish(id, String(channel), String(message), count))
 ipcMain.handle('console:subscribe', async (_event, id, kind, targets) => { await getPubSubConsole().win(id).subscribe(kind, Array.isArray(targets) ? targets.map(String) : []); return true })
+ipcMain.handle('console:durable:publish', async (_event, id, topic, message, count, maxlen) => getPubSubConsole().win(id).durablePublish(String(topic), String(message), count, Number(maxlen) || 0))
+ipcMain.handle('console:durable:subscribe', async (_event, id, opts) => getPubSubConsole().win(id).durableSubscribe(opts || {}))
+ipcMain.handle('console:durable:stop', async (_event, id) => getPubSubConsole().win(id).durableStop())
+ipcMain.handle('console:durable:ack', async (_event, id, topic, group, ids) => getPubSubConsole().win(id).durableAck(String(topic), String(group), ids))
+ipcMain.handle('console:durable:backlog', async (_event, id, topic) => getPubSubConsole().win(id).durableBacklog(String(topic)))
+ipcMain.handle('console:durable:destroy', async (_event, id, topic, group) => getPubSubConsole().win(id).durableDestroyGroup(String(topic), String(group)))
 ipcMain.handle('console:unsubscribe', async (_event, id) => { getPubSubConsole().win(id).unsubscribe(); return true })
 
 ipcMain.handle('bench:environment', () => ({
