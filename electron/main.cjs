@@ -1927,6 +1927,21 @@ ipcMain.handle('history:reset', (_event, profile) => {
 })
 
 
+ipcMain.handle('history:reset-all', () => {
+  const now = new Date().toISOString()
+  const resets = loadHistoryResets()
+  for (const profile of profiles) resets[profile] = now
+  writeFileSync(historyResetPath(), JSON.stringify(resets, null, 2) + '\n')
+  saveHistory({})
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    for (const profile of profiles) {
+      mainWindow.webContents.send('history:update', { profile, best: emptyBest() })
+    }
+  }
+  return true
+})
+
 ipcMain.handle('validation:suites', () => validationSuites)
 
 ipcMain.handle('validation:start', async (_event, request = {}) => {
