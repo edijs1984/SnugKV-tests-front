@@ -417,3 +417,66 @@ export type RpcLabJob = {
   finishedAt?: string
   error?: string
 }
+
+export type PubSubServerKind = 'snug' | 'redis'
+
+export type PubSubLabConfig = {
+  servers: PubSubServerKind[]
+  subscribers: number
+  /** Subscribers that connect and never read. */
+  stuck: number
+  channels: number
+  publishers: number
+  payloadBytes: number
+  /** Total PUBLISH per second, 0 for as fast as possible. */
+  rate: number
+  durationSeconds: number
+  pattern: boolean
+  /** SnugKV delivery policy. */
+  sendAttempts: number
+  sendTimeoutMs: number
+  queueSize: number
+}
+
+export type PubSubResult = {
+  server: string
+  subscribers: number
+  channels: number
+  publishers: number
+  pattern: boolean
+  payload_bytes: number
+  seconds: number
+  published: number
+  publish_per_sec: number
+  publish_p50_ms: number
+  publish_p99_ms: number
+  publish_max_ms: number
+  deliveries_expected: number
+  deliveries: number
+  delivered_share: number
+  deliveries_per_sec: number
+  delivery_p50_ms: number
+  delivery_p99_ms: number
+  delivery_max_ms: number
+  healthy_disconnected: number
+  stuck_subscribers: number
+  stuck_dropped: number
+  stuck_bytes_buffered: number
+  server_dropped_subscribers: number
+  publish_errors: number
+  connect_errors: number
+  first_problem?: string
+}
+
+export type PubSubLabJob = {
+  id: string
+  status: 'running' | 'done' | 'failed' | 'cancelled'
+  stage: string
+  config: PubSubLabConfig
+  results: { server: PubSubServerKind; label: string; result: PubSubResult }[]
+  log: string
+  commands: string[]
+  startedAt: string
+  finishedAt?: string
+  error?: string
+}

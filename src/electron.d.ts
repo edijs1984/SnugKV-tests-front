@@ -1,4 +1,4 @@
-import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult, RpcLabConfig, RpcLabJob } from './types'
+import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults, OptimizerMode, ValidationJob, ValidationOptions, ValidationSuite, ValidationSuiteId, DbListResult, DbKeyDetails, DbMutation, DbBulkAction, DbCommandAction, DbOverview, DbScanResult, DbPipelineResult, RpcLabConfig, RpcLabJob, PubSubLabConfig, PubSubLabJob } from './types'
 
 export {}
 
@@ -23,6 +23,9 @@ declare global {
       startValidation(suiteId: ValidationSuiteId, options: ValidationOptions): Promise<ValidationJob>
       cancelValidation(): Promise<boolean>
       onValidationUpdate(callback: (job: ValidationJob) => void): () => void
+      startPubSubLab(config: PubSubLabConfig): Promise<PubSubLabJob>
+      cancelPubSubLab(): Promise<boolean>
+      onPubSubUpdate(callback: (job: PubSubLabJob) => void): () => void
       startRpcLab(config: RpcLabConfig): Promise<RpcLabJob>
       cancelRpcLab(): Promise<boolean>
       onRpcUpdate(callback: (job: RpcLabJob) => void): () => void

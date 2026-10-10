@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { BenchmarkConfig, Job, ServerStatus, ProfileBestResults } from './types'
 import ValidationLab from './ValidationLab'
 import RpcLab from './RpcLab'
+import PubSubLab from './PubSubLab'
 import DatabaseBrowser from './DatabaseBrowser'
 import BenchmarkMatrix from './BenchmarkMatrix'
 import PipelineSweep from './PipelineSweep'
@@ -121,7 +122,7 @@ function RunTimer({ job, busy, now }: { job: Job | null; busy: boolean; now: num
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'benchmark' | 'database' | 'validation' | 'rpc'>('benchmark')
+  const [activeTab, setActiveTab] = useState<'benchmark' | 'database' | 'validation' | 'rpc' | 'pubsub'>('benchmark')
   const [config, setConfig] = useState(initial)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
@@ -383,6 +384,12 @@ function App() {
           >
             RPC cache
           </button>
+          <button
+            className={activeTab === 'pubsub' ? 'active' : ''}
+            onClick={() => setActiveTab('pubsub')}
+          >
+            Pub/Sub
+          </button>
         </nav>
 
         <button
@@ -396,7 +403,7 @@ function App() {
 
         <div className={`app-status ${activeTab === 'benchmark' ? (job?.status ?? 'idle') : 'idle'}`}>
           <span className="status-dot" />
-          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : activeTab === 'database' ? (serverStatus.running ? 'connected' : 'offline') : activeTab === 'rpc' ? 'rpc cache' : 'validation'}</span>
+          <span>{activeTab === 'benchmark' ? (job?.status ?? 'idle') : activeTab === 'database' ? (serverStatus.running ? 'connected' : 'offline') : activeTab === 'rpc' ? 'rpc cache' : activeTab === 'pubsub' ? 'pub/sub' : 'validation'}</span>
         </div>
       </header>
 
@@ -689,6 +696,8 @@ function App() {
         <DatabaseBrowser serverStatus={serverStatus} />
       ) : activeTab === 'rpc' ? (
         <RpcLab />
+      ) : activeTab === 'pubsub' ? (
+        <PubSubLab />
       ) : (
         <ValidationLab />
       )}

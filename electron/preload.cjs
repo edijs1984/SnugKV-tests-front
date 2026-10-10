@@ -36,6 +36,13 @@ contextBridge.exposeInMainWorld('snugBench', {
     ipcRenderer.on('validation:update', listener)
     return () => ipcRenderer.removeListener('validation:update', listener)
   },
+  startPubSubLab: config => ipcRenderer.invoke('pubsub:start', config),
+  cancelPubSubLab: () => ipcRenderer.invoke('pubsub:cancel'),
+  onPubSubUpdate: callback => {
+    const listener = (_event, job) => callback(job)
+    ipcRenderer.on('pubsub:update', listener)
+    return () => ipcRenderer.removeListener('pubsub:update', listener)
+  },
   startRpcLab: config => ipcRenderer.invoke('rpc:start', config),
   cancelRpcLab: () => ipcRenderer.invoke('rpc:cancel'),
   onRpcUpdate: callback => {
